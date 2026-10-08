@@ -32,7 +32,7 @@ export function mount({ header, main, app }) {
     preserveFocus(main, () => {
       main.replaceChildren(
         lists.length
-          ? h('ul', { class: 'task-list checklist-list' }, lists.map(row))
+          ? h('ul', { class: 'task-list' }, lists.map(row))
           : h(
               'div',
               { class: 'empty-state' },

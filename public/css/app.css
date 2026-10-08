@@ -701,6 +701,11 @@ h3 {
   list-style: none;
 }
 
+/* Long names truncate instead of widening the grid column past the screen. */
+.task-list > li {
+  min-width: 0;
+}
+
 .task-row {
   display: flex;
   align-items: center;
@@ -784,11 +789,6 @@ h3 {
 }
 
 /* ------------------------------------------------------------ Checklists */
-
-/* Long names truncate instead of widening the grid column past the screen. */
-.checklist-list > li {
-  min-width: 0;
-}
 
 .list-progress {
   display: flex;
