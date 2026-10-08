@@ -9,110 +9,86 @@ An offline task manager for your phone, with a dark theme. You install it to the
 ## Requirements
 
 - **Node.js 20 or newer** on the PC. The project has no dependencies, so there is nothing to `npm install`.
-- The phone and the PC must be on the **same Wi-Fi network**, or connected by USB (Android only).
-- Extra tools, depending on the phone:
-  - **Android**: [Android platform-tools](https://developer.android.com/tools/releases/platform-tools) (`adb`).
-  - **iPhone**: [mkcert](https://github.com/FiloSottile/mkcert) or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
+- **[mkcert](https://github.com/FiloSottile/mkcert)** on the PC, to create the HTTPS certificate.
+- The phone and the PC on the **same Wi-Fi network**. Guest networks often block devices from reaching each other, so use the main network.
+
+## How it works
+
+Both Android and iPhone install the app over **HTTPS on your Wi-Fi**, from `https://<PC-LAN-IP>:8443`. A PWA works offline only in a **secure context**, and a plain address such as `http://192.168.1.20:8080` is not one. From a plain HTTP address the app can't be installed, and it stops working as soon as the PC server stops.
+
+The setup has three steps:
+
+1. [Create the HTTPS certificate](#1-create-the-https-certificate) on the PC (once).
+2. Make the phone trust it and install the app: [Android](#2a-install-on-android) or [iPhone](#2b-install-on-iphone).
+3. Use the app. It works offline, so the PC only needs to be on when you install or update.
 
 ## Run the server
 
 ```sh
-npm start      # serves public/ on http://0.0.0.0:8080 and prints every LAN URL
+npm start      # serves public/ and prints every LAN URL
 npm test       # runs the scheduling and import/export tests
 ```
 
-If `certs/cert.pem` and `certs/key.pem` exist, the server also serves HTTPS on port **8443**. To use other ports, set `PORT` and `HTTPS_PORT`.
+When `certs/cert.pem` and `certs/key.pem` exist, the server serves HTTPS on port **8443**. It also serves plain HTTP on port 8080, but don't use that address on the phone. To use other ports, set `HTTPS_PORT` and `PORT`.
 
-> **Windows:** the first time you run the server, Windows Firewall may ask whether to allow Node.js. Allow it on **private networks**, or the phone can't reach the PC.
-
-## Why the install method matters
-
-A PWA works offline only in a **secure context**: either HTTPS or the exact address `http://localhost`. A plain address such as `http://192.168.1.20:8080` is not secure, so on that address:
-
-- offline mode doesn't work, and the app breaks as soon as the PC server stops;
-- the app can't be properly installed.
-
-So, can you install it without a certificate? **On Android, yes. On iPhone, no.** Follow the steps for your phone.
+> **Windows:** the first time you run the server, Windows Firewall may ask whether to allow Node.js. Allow it on **private networks**, or the phone can't reach the PC. Also check that Windows treats your Wi-Fi as a **Private** network, not Public.
 
 ---
 
-## Android
+## 1. Create the HTTPS certificate
 
-### Option A: HTTPS certificate over Wi-Fi
+Do this once on the PC. Before you start, give your PC a **fixed IP address**, for example with a DHCP reservation on your router. The certificate and the app's address both depend on that IP.
 
-No cable and no Chrome flags. You create the certificate once, as described in [HTTPS certificate (mkcert)](#https-certificate-mkcert) below.
+1. Install mkcert: `winget install FiloSottile.mkcert` on Windows or `brew install mkcert` on macOS. Open a new terminal afterwards.
+2. Find your PC's Wi-Fi IP address, for example `192.168.1.20`. Run `ipconfig` on Windows or `ipconfig getifaddr en0` on macOS. `npm start` also prints it.
+3. In the project folder, create the certificate and copy the CA file for the phone. Replace `<PC-LAN-IP>` with your IP. In PowerShell:
+   ```powershell
+   New-Item -ItemType Directory -Force certs | Out-Null
+   mkcert -cert-file certs/cert.pem -key-file certs/key.pem <PC-LAN-IP> localhost 127.0.0.1
+   Copy-Item "$(mkcert -CAROOT)\rootCA.pem" certs\rootCA.crt
+   ```
+   On macOS or Linux:
+   ```sh
+   mkdir -p certs
+   mkcert -cert-file certs/cert.pem -key-file certs/key.pem <PC-LAN-IP> localhost 127.0.0.1
+   cp "$(mkcert -CAROOT)/rootCA.pem" certs/rootCA.crt
+   ```
+   The `certs/` folder is gitignored.
+4. Run `npm start`. The output should now include an `https://<PC-LAN-IP>:8443` line.
+5. Optional: `mkcert -install` also makes the PC's own browsers trust the certificate. Phones don't need it.
 
-1. Send **`certs/rootCA.crt`** to the phone, by USB file transfer, Drive or email. If the phone is connected with USB debugging on, you can also run `adb push certs/rootCA.crt /sdcard/Download/`.
-2. On the phone, install it as a **CA certificate**. On Pixel phones the path is **Settings → Security & privacy → More security & privacy → Encryption & credentials → Install a certificate → CA certificate → Install anyway**. On Samsung phones it is **Settings → Security and privacy → More security settings → Install from device storage → CA certificate**. On other phones, search Settings for "CA certificate". Android may ask you to set a screen lock first.
-3. On the PC, run `npm start`. The output should include an `https://<PC-LAN-IP>:8443` line.
+**Only `rootCA.crt` (the same file as `rootCA.pem`) goes to phones.** Never share `rootCA-key.pem` from the `mkcert -CAROOT` folder: anyone with that key can create certificates your phone will trust.
+
+If the PC's IP changes, run step 3 again with the new IP. The phones keep trusting the same `rootCA.crt`, so you don't need to send it again. The app at the new address starts empty, so move your data with a backup.
+
+---
+
+## 2a. Install on Android
+
+1. Send **`certs/rootCA.crt`** to the phone, for example by email, Google Drive or a chat app, and save it to the phone's storage.
+2. On the phone, install it as a **CA certificate**:
+   - **Pixel:** Settings → Security & privacy → More security & privacy → Encryption & credentials → Install a certificate → **CA certificate** → Install anyway.
+   - **Samsung:** Settings → Security and privacy → More security settings → Install from device storage → **CA certificate**.
+   - **Other phones:** search Settings for "CA certificate".
+
+   Android may ask you to set a screen lock first.
+3. On the PC, run `npm start`.
 4. In **Chrome** on the phone, open `https://<PC-LAN-IP>:8443`. It should load with no certificate warning.
 5. Open the menu **⋮** and tap **Install app**. If the dialog offers both, choose **Install**, not **Create shortcut**. A real install appears in the app drawer and opens without an address bar.
 
-### Option B: USB with `adb reverse` (no certificate)
-
-1. On the phone, turn on **Developer options → USB debugging**. To show Developer options, tap **Settings → About phone → Build number** seven times. Then connect the phone to the PC with a USB cable and accept the prompt on the phone.
-2. On the PC, run:
-   ```sh
-   npm start
-   adb reverse tcp:8080 tcp:8080
-   ```
-   `adb` comes with [platform-tools](https://developer.android.com/tools/releases/platform-tools). On Windows, `winget install Google.PlatformTools` installs it; open a new terminal afterwards.
-3. On the phone, open **`http://localhost:8080`** in **Chrome**. Because the address is `localhost`, Chrome treats it as secure.
-4. Open the Chrome menu **⋮** and tap **Install app**.
-5. Done. You can unplug the cable, and the app works offline from the home-screen icon.
-
-### Option C: Wi-Fi, by telling Chrome to trust your PC's address
-
-1. On the PC, run `npm start` and note the LAN URL it prints, for example `http://192.168.1.20:8080`.
-2. On the phone, open `chrome://flags/#unsafely-treat-insecure-origin-as-secure` in Chrome.
-3. Enter the URL from step 1 and set the flag to **Enabled**. Then tap **Relaunch**.
-4. Open that URL, then use **⋮ → Install app**.
-
-> If the home-screen icon opens with Chrome's address bar, it is a **shortcut**, not an installed app. This happens when you add it from a plain `http://<IP>:8080` address. Remove the icon and install again with one of the options above.
-
 ---
 
-## HTTPS certificate (mkcert)
-
-You need this for every iPhone install, and for Android Option A. Before you start, give your PC a **fixed IP address**, for example with a DHCP reservation on your router. The certificate and the app's address both depend on that IP.
-
-1. Install mkcert on the PC: `winget install FiloSottile.mkcert` on Windows or `brew install mkcert` on macOS. Open a new terminal afterwards.
-2. In the project folder, create the certificate and copy the CA file for the phone. In PowerShell:
-   ```powershell
-   mkcert -cert-file certs/cert.pem -key-file certs/key.pem <PC-LAN-IP> localhost 127.0.0.1
-   Copy-Item "$(mkcert -CAROOT)ootCA.pem" certsootCA.crt
-   ```
-   On macOS or Linux, the copy command is `cp "$(mkcert -CAROOT)/rootCA.pem" certs/rootCA.crt`. Replace `<PC-LAN-IP>` with your PC's address, for example `192.168.1.20`. The `certs/` folder is gitignored.
-3. Optional: `mkcert -install` also makes the PC's own browsers trust the certificate. Phones don't need it.
-
-**Only `rootCA.crt` (the same file as `rootCA.pem`) goes to phones.** Never share `rootCA-key.pem` from the `mkcert -CAROOT` folder: anyone with that key can create certificates your phone will trust. If the PC's IP changes, run step 2 again with the new IP. The app at the new address starts empty, so move your data with a backup.
-
----
-
-## iPhone (needs HTTPS)
+## 2b. Install on iPhone
 
 iOS installs the app from **Safari** only.
 
-### Option A: mkcert (fully local, recommended)
-
-1. Create the certificate as described in [HTTPS certificate (mkcert)](#https-certificate-mkcert).
-2. Send **`certs/rootCA.crt`** to the iPhone by AirDrop or email, then open it on the phone.
-3. On the iPhone, open **Settings → General → VPN & Device Management**, tap the downloaded profile and tap **Install**.
-4. Open **Settings → General → About → Certificate Trust Settings** and turn on full trust for the mkcert certificate.
-5. On the PC, run `npm start`. The output should now include an `https://<PC-LAN-IP>:8443` line.
-6. On the iPhone, open `https://<PC-LAN-IP>:8443` in **Safari** and tap **Share → Add to Home Screen**.
+1. Send **`certs/rootCA.crt`** to the iPhone by AirDrop or email, then open it on the phone. iOS says "Profile Downloaded".
+2. Open **Settings → General → VPN & Device Management**, tap the downloaded profile and tap **Install**.
+3. Open **Settings → General → About → Certificate Trust Settings** and turn on full trust for the mkcert certificate.
+4. On the PC, run `npm start`.
+5. In **Safari** on the iPhone, open `https://<PC-LAN-IP>:8443`. It should load with no certificate warning.
+6. Tap **Share → Add to Home Screen**.
 7. Open the app **from the home screen once while the PC server is still running**, so it can save itself for offline use.
-
-### Option B: HTTPS tunnel (needs internet only during install)
-
-```sh
-npm start
-cloudflared tunnel --url http://localhost:8080
-```
-
-Open the printed `https://….trycloudflare.com` URL in Safari, then tap **Share → Add to Home Screen**.
-
-> **Caution:** the tunnel URL changes every time you run cloudflared, and each URL counts as a different app with its own, empty storage. Install once and keep that home-screen app. To move to a new URL, export a backup from the old app and import it in the new one.
 
 ---
 
@@ -129,7 +105,7 @@ Open the printed `https://….trycloudflare.com` URL in Safari, then tap **Share
 ## Updating the app on your phone
 
 1. Change the files in `public/`, then **bump `CACHE_VERSION`** in `public/sw.js`, for example `'v1'` → `'v2'`. Without this step, installed phones keep the old version.
-2. Start the server, and make sure the phone can reach it at the **same address as before**. On Android with USB, run `adb reverse tcp:8080 tcp:8080` again.
+2. Run `npm start` on the PC, with the phone on the same Wi-Fi. The PC must have the **same IP as when you installed**, so the app's address `https://<PC-LAN-IP>:8443` stays the same.
 3. In the app, go to **Settings → Check for updates**. When the toast **"Update available — Reload"** appears, tap **Reload**.
 
 The app also checks for updates by itself each time it starts while the server is reachable.
@@ -138,13 +114,14 @@ The app also checks for updates by itself each time it starts while the server i
 
 | Problem | Fix |
 |---|---|
-| Chrome shows no **Install app** option | You're not on a secure address. Use `http://localhost:8080` through `adb reverse`, or enable the Chrome flag (Android Option B). |
-| The phone can't open the page | Check that the phone and PC are on the same Wi-Fi, allow Node.js through the PC firewall, and use the IP printed by `npm start`. |
-| Chrome or Safari says the connection is not private | The phone doesn't trust the mkcert CA yet. On Android, install `certs/rootCA.crt` as a CA certificate. On iPhone, repeat steps 2–4, including **Certificate Trust Settings**. Also check that you opened the IP the certificate was made for. |
-| The home-screen icon opens with an address bar | It is a shortcut, not an install. Remove it and install from `https://<PC-LAN-IP>:8443` (or `localhost` over USB) with **Install app**. |
+| `npm start` prints no `https://` line | `certs/cert.pem` and `certs/key.pem` are missing. Follow [Create the HTTPS certificate](#1-create-the-https-certificate). |
+| The phone can't open the page | Check that the phone and PC are on the same Wi-Fi (not a guest network), allow Node.js through the PC firewall, and use the `https://…:8443` address printed by `npm start`. |
+| Chrome or Safari says the connection is not private | The phone doesn't trust the mkcert CA yet. On Android, install `certs/rootCA.crt` as a **CA certificate**. On iPhone, repeat steps 1–3, including **Certificate Trust Settings**. Also check that you opened the IP the certificate was made for. |
+| Chrome shows no **Install app** option | You're on a plain `http://` address. Open `https://<PC-LAN-IP>:8443` instead. |
+| The home-screen icon opens with an address bar | It is a shortcut, not an install. Remove it and install again from `https://<PC-LAN-IP>:8443`. |
 | The app is empty after reinstalling or changing IP | Each address has its own storage. Import your latest backup. |
 | Changes don't show up on the phone | Bump `CACHE_VERSION` in `public/sw.js`, then use **Check for updates**. |
-| `Port 8080 is already in use` | Stop the other server, or run `PORT=8081 npm start`. On Windows PowerShell: `$env:PORT=8081; npm start`. |
+| `Port 8443 is already in use` (or 8080) | Stop the other server, or pick other ports: `HTTPS_PORT=8444 PORT=8081 npm start`. On Windows PowerShell: `$env:HTTPS_PORT=8444; $env:PORT=8081; npm start`. The app at a new port starts empty, so move your data with a backup. |
 
 ## Development
 
