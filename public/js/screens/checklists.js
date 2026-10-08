@@ -4,7 +4,7 @@
  */
 
 import { getState, subscribe } from '../store.js';
-import { h, icon, preserveFocus } from '../ui.js';
+import { h, icon, iconGroupedList, preserveFocus } from '../ui.js';
 import { renderIcon, uiIcon } from '../icons.js';
 
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -32,7 +32,7 @@ export function mount({ header, main, app }) {
     preserveFocus(main, () => {
       main.replaceChildren(
         lists.length
-          ? h('ul', { class: 'task-list' }, lists.map(row))
+          ? iconGroupedList(lists, row)
           : h(
               'div',
               { class: 'empty-state' },

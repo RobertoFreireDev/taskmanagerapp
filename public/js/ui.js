@@ -3,7 +3,7 @@
  * and the editable list used for notes and checklists.
  */
 
-import { uiIcon } from './icons.js';
+import { groupByIcon, renderIcon, uiIcon } from './icons.js';
 import { newId, TEXT_MAX } from './store.js';
 
 /**
@@ -43,6 +43,31 @@ function flatten(children) {
 /** A UI glyph as an element. */
 export function icon(name, className = 'icon') {
   return h('span', { class: className, 'aria-hidden': 'true', html: uiIcon(name) });
+}
+
+/**
+ * A list grouped by icon, as used by Tasks and Checklists: each group has a
+ * heading (icon, label, count) followed by its rows, built by row(item).
+ */
+export function iconGroupedList(items, row) {
+  return h(
+    'div',
+    { class: 'icon-groups' },
+    groupByIcon(items).map((group) =>
+      h(
+        'section',
+        { class: 'icon-group' },
+        h(
+          'h2',
+          { class: 'icon-group-heading' },
+          h('span', { class: 'icon', 'aria-hidden': 'true', html: renderIcon(group.key) }),
+          h('span', {}, group.label),
+          h('span', { class: 'section-count' }, String(group.items.length)),
+        ),
+        h('ul', { class: 'task-list' }, group.items.map(row)),
+      ),
+    ),
+  );
 }
 
 let uidCounter = 0;

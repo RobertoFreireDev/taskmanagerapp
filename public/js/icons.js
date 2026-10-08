@@ -100,6 +100,20 @@ export function iconLabel(key) {
   return ICONS[isIconKey(key) ? key : DEFAULT_ICON].label;
 }
 
+/**
+ * Splits items (tasks or checklists) into one group per icon, ordered by the
+ * icon's label. Items keep their incoming order inside each group.
+ */
+export function groupByIcon(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = isIconKey(item.icon) ? item.icon : DEFAULT_ICON;
+    if (!groups.has(key)) groups.set(key, { key, label: ICONS[key].label, items: [] });
+    groups.get(key).items.push(item);
+  }
+  return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
+
 export function uiIcon(name) {
   return UI_ICONS[name] ?? '';
 }

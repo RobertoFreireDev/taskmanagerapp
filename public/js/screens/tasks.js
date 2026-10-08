@@ -6,7 +6,7 @@
 import { getState, subscribe, setTaskActive } from '../store.js';
 import { describeRecurrence } from '../schedule.js';
 import { todayKey } from '../dates.js';
-import { h, icon, preserveFocus } from '../ui.js';
+import { h, icon, iconGroupedList, preserveFocus } from '../ui.js';
 import { renderIcon } from '../icons.js';
 
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -27,7 +27,7 @@ export function mount({ header, main, app }) {
     preserveFocus(main, () => {
       main.replaceChildren(
         tasks.length
-          ? h('ul', { class: 'task-list' }, tasks.map((task) => row(task, today)))
+          ? iconGroupedList(tasks, (task) => row(task, today))
           : h(
               'div',
               { class: 'empty-state' },
