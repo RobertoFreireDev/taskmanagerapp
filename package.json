@@ -1,0 +1,14 @@
+{
+  "name": "task-manager-pwa",
+  "version": "1.0.0",
+  "description": "Mobile-only, dark-mode, offline-first task manager PWA. No dependencies, no build step.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
+  }
+}
