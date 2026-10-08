@@ -10,7 +10,7 @@ import { DEFAULT_ICON, isIconKey } from './icons.js';
 export const STORAGE_KEY = 'taskmanager.state';
 export const LAST_EXPORT_KEY = 'taskmanager.lastExport';
 export const CORRUPT_KEY = 'taskmanager.state.corrupt';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const NAME_MAX = 80;
 export const TEXT_MAX = 2000;
 
@@ -28,11 +28,12 @@ export class DataError extends Error {
  * must keep importing.
  */
 const MIGRATIONS = {
-  // 1: (data) => ({ ...data, schemaVersion: 2, ... }),
+  // 1 → 2: standalone checklists.
+  1: (data) => ({ ...data, schemaVersion: 2, checklists: [] }),
 };
 
 export function emptyState() {
-  return { schemaVersion: SCHEMA_VERSION, tasks: [], progress: {} };
+  return { schemaVersion: SCHEMA_VERSION, tasks: [], progress: {}, checklists: [] };
 }
 
 /** Brings raw parsed data up to the current schema and normalizes it. Throws DataError. */
@@ -75,13 +76,23 @@ function normalizeState(data) {
     }
     if (Object.keys(out).length) progress[taskId] = out;
   }
-  return { schemaVersion: SCHEMA_VERSION, tasks, progress };
+
+  const rawLists = data.checklists ?? [];
+  if (!Array.isArray(rawLists)) throw new DataError('"checklists" must be a list.');
+  const listIds = new Set();
+  const checklists = rawLists.map((raw, i) => {
+    const list = normalizeList(raw, i);
+    if (listIds.has(list.id)) throw new DataError(`Two checklists share the id "${list.id}".`);
+    listIds.add(list.id);
+    return list;
+  });
+  return { schemaVersion: SCHEMA_VERSION, tasks, progress, checklists };
 }
 
 function normalizeTask(t, i) {
   const where = `Task ${i + 1}`;
   if (!isPlainObject(t)) throw new DataError(`${where} is not an object.`);
-  const id = typeof t.id === 'string' ? t.id.trim() : typeof t.id === 'number' ? String(t.id) : '';
+  const id = cleanId(t.id);
   if (!id) throw new DataError(`${where} has no id.`);
   const name = cleanText(t.name, NAME_MAX);
   if (!name) throw new DataError(`${where} has no name.`);
@@ -101,7 +112,8 @@ function normalizeTask(t, i) {
   };
 }
 
-function normalizeChecklist(list) {
+/** Checklist rows as { id, text }; standalone checklists also keep `checked`. */
+function normalizeChecklist(list, { withChecked = false } = {}) {
   if (!Array.isArray(list)) return [];
   const seen = new Set();
   const out = [];
@@ -111,9 +123,28 @@ function normalizeChecklist(list) {
     let id = isPlainObject(item) && typeof item.id === 'string' && item.id ? item.id : newId();
     if (seen.has(id)) id = newId();
     seen.add(id);
-    out.push({ id, text });
+    out.push(withChecked ? { id, text, checked: isPlainObject(item) && item.checked === true } : { id, text });
   }
   return out;
+}
+
+/** A standalone checklist: no dates, no completion, just items to tick. */
+function normalizeList(l, i) {
+  const where = `Checklist ${i + 1}`;
+  if (!isPlainObject(l)) throw new DataError(`${where} is not an object.`);
+  const id = cleanId(l.id);
+  if (!id) throw new DataError(`${where} has no id.`);
+  const name = cleanText(l.name, NAME_MAX);
+  if (!name) throw new DataError(`${where} has no name.`);
+  const createdAt = isTimestamp(l.createdAt) ? l.createdAt : new Date().toISOString();
+  return {
+    id,
+    icon: isIconKey(l.icon) ? l.icon : DEFAULT_ICON,
+    name,
+    items: normalizeChecklist(l.items, { withChecked: true }),
+    createdAt,
+    updatedAt: isTimestamp(l.updatedAt) ? l.updatedAt : createdAt,
+  };
 }
 
 function normalizeRecurrence(r, where) {
@@ -169,6 +200,10 @@ function uniqueInts(list, min, max) {
 
 function cleanText(value, max) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function cleanId(value) {
+  return typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '';
 }
 
 function isTimestamp(value) {
@@ -341,13 +376,59 @@ export function undoOccurrence(taskId, date) {
   commit();
 }
 
+// ---------------------------------------------------------------------------
+// Checklists: reusable lists, independent of tasks and dates.
+
+export function getChecklist(id) {
+  return state.checklists.find((c) => c.id === id) ?? null;
+}
+
+/** Adds a checklist built from form fields. Returns the stored checklist. */
+export function createChecklist(fields) {
+  const now = new Date().toISOString();
+  const list = normalizeList({ ...fields, id: newId(), createdAt: now, updatedAt: now }, state.checklists.length);
+  state.checklists.push(list);
+  commit();
+  return list;
+}
+
+/** Replaces a checklist's icon, name and items. */
+export function updateChecklist(id, fields) {
+  const index = state.checklists.findIndex((c) => c.id === id);
+  if (index < 0) return null;
+  const old = state.checklists[index];
+  const list = normalizeList({ ...old, ...fields, id, createdAt: old.createdAt, updatedAt: new Date().toISOString() }, index);
+  state.checklists[index] = list;
+  commit();
+  return list;
+}
+
+export function deleteChecklist(id) {
+  state.checklists = state.checklists.filter((c) => c.id !== id);
+  commit();
+}
+
+/** Sets `checked` on the given items of a checklist (all of them to reset it). */
+export function setListItemsChecked(listId, itemIds, checked) {
+  const list = getChecklist(listId);
+  if (!list) return;
+  const ids = new Set(itemIds);
+  let changed = false;
+  for (const item of list.items) {
+    if (!ids.has(item.id) || item.checked === checked) continue;
+    item.checked = checked;
+    changed = true;
+  }
+  if (changed) commit();
+}
+
 /** Replaces everything with already-migrated state (import). */
 export function replaceState(next) {
   state = next;
   commit();
 }
 
-/** Wipes all tasks, progress and the last-export marker. */
+/** Wipes all tasks, progress, checklists and the last-export marker. */
 export function clearAll() {
   state = emptyState();
   try {

@@ -8,7 +8,7 @@ import { SCHEMA_VERSION, DataError, migrate, setLastExport } from './store.js';
 export const APP_ID = 'task-manager-pwa';
 export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 
-/** The export document. Always includes quick tasks. */
+/** The export document. Always includes quick tasks and checklists. */
 export function buildExport(state, now = new Date()) {
   return {
     app: APP_ID,
@@ -16,6 +16,7 @@ export function buildExport(state, now = new Date()) {
     exportedAt: now.toISOString(),
     tasks: state.tasks,
     progress: state.progress,
+    checklists: state.checklists,
   };
 }
 
@@ -90,12 +91,18 @@ export function parseImport(text) {
   if (data.schemaVersion > SCHEMA_VERSION) {
     throw new DataError('This backup was made by a newer version of the app. Update the app, then import again.');
   }
-  const state = migrate({ schemaVersion: data.schemaVersion, tasks: data.tasks, progress: data.progress ?? {} });
+  const state = migrate({
+    schemaVersion: data.schemaVersion,
+    tasks: data.tasks,
+    progress: data.progress ?? {},
+    checklists: data.checklists ?? [],
+  });
   const progressRecords = Object.values(state.progress).reduce((n, byDate) => n + Object.keys(byDate).length, 0);
   return {
     state,
     summary: {
       tasks: state.tasks.length,
+      checklists: state.checklists.length,
       progressRecords,
       exportedAt: typeof data.exportedAt === 'string' ? data.exportedAt : null,
     },

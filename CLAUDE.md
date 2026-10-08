@@ -70,7 +70,9 @@ So the answer to "without a certificate?" is **yes on Android, no on iPhone**. S
 ├── package.json              # scripts only: "start", "test" — no dependencies
 ├── certs/                    # gitignored, mkcert output
 ├── tests/
-│   └── schedule.test.js      # node --test
+│   ├── schedule.test.js      # node --test
+│   ├── io.test.js            # export / import validation
+│   └── store.test.js         # migration, checklist CRUD
 └── public/
     ├── index.html
     ├── manifest.webmanifest
@@ -89,10 +91,13 @@ So the answer to "without a certificate?" is **yes on Android, no on iPhone**. S
             ├── home.js
             ├── tasks.js
             ├── task-form.js
+            ├── checklists.js       # checklist index
+            ├── checklist-view.js   # tick items, uncheck all
+            ├── checklist-form.js   # create / edit / delete a checklist
             └── settings.js
 ```
 
-Routing uses hashes: `#/home` (default), `#/tasks`, `#/tasks/new`, `#/tasks/:id`, `#/settings`. A fixed bottom tab bar holds three tabs: Home, Tasks, Settings.
+Routing uses hashes: `#/home` (default), `#/tasks`, `#/tasks/new`, `#/tasks/:id`, `#/checklists`, `#/checklists/new`, `#/checklists/:id`, `#/checklists/:id/edit`, `#/settings`. A fixed bottom tab bar holds four tabs: Home, Tasks, Checklists, Settings.
 
 ---
 
@@ -127,9 +132,10 @@ All state lives in one `localStorage` key, `taskmanager.state`, as JSON. Save af
 
 ```js
 State = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   tasks: Task[],
-  progress: { [taskId]: { [occurrenceDate: "YYYY-MM-DD"]: Occurrence } }
+  progress: { [taskId]: { [occurrenceDate: "YYYY-MM-DD"]: Occurrence } },
+  checklists: Checklist[]
 }
 
 Task = {
@@ -158,11 +164,21 @@ Occurrence = {
   checklist: { [itemId]: boolean },  // progress is per occurrence; resets for each new occurrence
   completedAt: string | null         // ISO timestamp; null = not done
 }
+
+Checklist = {              // standalone and reusable; unrelated to tasks and dates
+  id: string,
+  icon: IconKey,
+  name: string,            // required, trimmed, max 80 chars
+  items: { id: string, text: string, checked: boolean }[],
+  createdAt: string,
+  updatedAt: string
+}
 ```
 
 - `load()` runs `migrate(raw)`. Every future schema change increments `schemaVersion` and adds a migration step. Never break old export files.
 - If a checklist item is deleted from a task, ignore its orphaned keys in `progress`.
 - When a task is deleted, delete its `progress` entry too.
+- Schema history: 1 → 2 added `checklists` (migration sets it to `[]`).
 
 ---
 
@@ -239,6 +255,12 @@ Use `node --test tests/`. The tests must cover:
 - Edit mode has a Delete button with confirmation.
 - Editing a recurrence does **not** erase past `progress`.
 
+### Checklists (`#/checklists`)
+Reusable lists for double-checking that nothing is missed, such as a packing list for a trip. They have **no dates, no scheduling and no Complete button**, and they never appear on Home.
+- **List:** every checklist, sorted by name, with its icon and a progress line such as "3 of 7 checked". A **floating "+" button** opens `#/checklists/new`.
+- **Checklist (`#/checklists/:id`):** a header with Back and **Edit**; a progress line and bar; the items as large checkbox rows. Ticks save immediately and persist until cleared. **Uncheck all** clears every tick so the list can be reused, with an Undo toast.
+- **Form (`#/checklists/new`, `#/checklists/:id/edit`):** icon picker, Name (required) and an Items list that is editable and reorderable; Enter adds the next row. Editing keeps the ticks of items that remain. Edit mode has a Delete button with confirmation.
+
 ### Settings (`#/settings`)
 - **Export:**
   - Build the export JSON (section 10). The filename is `tasks-backup-YYYY-MM-DD.json`.
@@ -247,7 +269,7 @@ Use `node --test tests/`. The tests must cover:
   - Provide two buttons: **Share backup…** (shown only when supported) and **Download backup**.
 - **Import:**
   - Use `<input type="file" accept=".json,application/json">`. Parse the file and validate it (section 10).
-  - Show a summary: "X tasks, Y progress records, exported on <date>".
+  - Show a summary: "X tasks, Z checklists, Y progress records, exported on <date>".
   - Confirm with "This will replace all current data", then replace the state and re-render.
   - Invalid files show a clear error and change nothing.
 - **Storage note:** state that data lives only on this device and that removing the app deletes it. Show the last export date, saved in localStorage under `taskmanager.lastExport`.
@@ -322,10 +344,11 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 ```json
 {
   "app": "task-manager-pwa",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exportedAt": "2026-10-08T11:00:00.000Z",
   "tasks": [ /* Task */ ],
-  "progress": { /* taskId -> date -> Occurrence */ }
+  "progress": { /* taskId -> date -> Occurrence */ },
+  "checklists": [ /* Checklist */ ]
 }
 ```
 
@@ -333,11 +356,12 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 - `app` must match.
 - `schemaVersion` must be ≤ current; older versions run through `migrate`.
 - `tasks` must be an array, and every task must have an `id`, a `name` and a valid `recurrence.type`.
+- `checklists`, when present, must be an array, and every checklist must have an `id` and a `name`. Schema 1 files have no checklists.
 - Dates must match `/^\d{4}-\d{2}-\d{2}$/`.
 - Unknown icons map to `task`.
 - Drop `progress` entries for unknown task IDs.
 
-**Behavior:** import always **replaces** the whole state, after confirmation. Export always includes quick tasks too.
+**Behavior:** import always **replaces** the whole state, after confirmation. Export always includes quick tasks and checklists too.
 
 ---
 
@@ -359,3 +383,4 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 - Quick tasks appear **only on Home**, not in the Tasks list, and become Pending if not deleted on their day.
 - Import **replaces** all data. There is no merge.
 - Completing a task does **not** require every checklist item to be ticked.
+- Checklists (the tab) are independent of tasks: CRUD only, no dates and no completion. Ticks persist until **Uncheck all**.

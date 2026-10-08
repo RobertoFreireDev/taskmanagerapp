@@ -214,7 +214,8 @@ h3 {
   padding: 4px var(--gutter) calc(32px + var(--kb, 0px));
 }
 
-.view[data-screen='tasks'] {
+.view[data-screen='tasks'],
+.view[data-screen='checklists'] {
   padding-bottom: 104px;
 }
 
@@ -780,6 +781,78 @@ h3 {
 
 .empty-state .btn {
   margin-top: 16px;
+}
+
+/* ------------------------------------------------------------ Checklists */
+
+/* Long names truncate instead of widening the grid column past the screen. */
+.checklist-list > li {
+  min-width: 0;
+}
+
+.list-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
+.list-progress-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-progress-text {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.list-progress.is-complete .list-progress-text {
+  color: var(--success);
+}
+
+.progress-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+
+.progress-bar-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s, background-color 0.2s;
+}
+
+.list-progress.is-complete .progress-bar-fill {
+  background: var(--success);
+}
+
+.list-progress .btn {
+  flex: none;
+  padding: 0 8px;
+}
+
+.list-items {
+  margin: 0;
+  padding: 2px 14px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.list-items li + li {
+  border-top: 1px solid var(--border);
+}
+
+.list-items .check-row {
+  min-height: 52px;
 }
 
 /* ----------------------------------------------------------------- Forms */

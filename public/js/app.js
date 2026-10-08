@@ -8,13 +8,22 @@ import { h, icon, toast, closeAllOverlays, confirmDialog, trackVisualViewport } 
 import * as homeScreen from './screens/home.js';
 import * as tasksScreen from './screens/tasks.js';
 import * as taskFormScreen from './screens/task-form.js';
+import * as checklistsScreen from './screens/checklists.js';
+import * as checklistViewScreen from './screens/checklist-view.js';
+import * as checklistFormScreen from './screens/checklist-form.js';
 import * as settingsScreen from './screens/settings.js';
+
+const idParam = (m) => ({ id: decodeURIComponent(m[1]) });
 
 const ROUTES = [
   { re: /^#\/home$/, screen: homeScreen, tab: 'home' },
   { re: /^#\/tasks$/, screen: tasksScreen, tab: 'tasks' },
   { re: /^#\/tasks\/new$/, screen: taskFormScreen, tab: 'tasks' },
-  { re: /^#\/tasks\/([^/]+)$/, screen: taskFormScreen, tab: 'tasks', params: (m) => ({ id: decodeURIComponent(m[1]) }) },
+  { re: /^#\/tasks\/([^/]+)$/, screen: taskFormScreen, tab: 'tasks', params: idParam },
+  { re: /^#\/checklists$/, screen: checklistsScreen, tab: 'checklists' },
+  { re: /^#\/checklists\/new$/, screen: checklistFormScreen, tab: 'checklists' },
+  { re: /^#\/checklists\/([^/]+)\/edit$/, screen: checklistFormScreen, tab: 'checklists', params: idParam },
+  { re: /^#\/checklists\/([^/]+)$/, screen: checklistViewScreen, tab: 'checklists', params: idParam },
   { re: /^#\/settings$/, screen: settingsScreen, tab: 'settings' },
 ];
 const DEFAULT_HASH = '#/home';
@@ -22,6 +31,7 @@ const DEFAULT_HASH = '#/home';
 const TABS = [
   { key: 'home', label: 'Home', href: '#/home', icon: 'today' },
   { key: 'tasks', label: 'Tasks', href: '#/tasks', icon: 'list' },
+  { key: 'checklists', label: 'Checklists', href: '#/checklists', icon: 'clipboard' },
   { key: 'settings', label: 'Settings', href: '#/settings', icon: 'settings' },
 ];
 
@@ -141,7 +151,7 @@ async function onHashChange() {
     history.replaceState(null, '', current.hash);
     const leave = await confirmDialog({
       title: 'Discard changes?',
-      message: 'You have unsaved changes to this task.',
+      message: current.instance.dirtyMessage ?? 'You have unsaved changes to this task.',
       confirmLabel: 'Discard',
       cancelLabel: 'Keep editing',
       danger: true,

@@ -4,7 +4,8 @@ An offline task manager for your phone, with a dark theme. You install it to the
 
 - **Home**: today's tasks in three sections: **To do**, **Pending** (missed and not done yet) and **Done**. Use **+ Quick task** for one-off tasks.
 - **Tasks**: recurring tasks. Each one can repeat once, daily, weekly, monthly or yearly, every N days, weeks, months or years. Tasks can have notes and a checklist.
-- **Settings**: back up, restore, check for updates, and delete all data.
+- **Checklists**: reusable lists for double-checking you haven't missed anything, such as a packing list for a trip. Tick items off, then **Uncheck all** to use the list again. They have no dates and never appear on Home.
+- **Settings**: back up (tasks, progress and checklists), restore, check for updates, and delete all data.
 
 ## Requirements
 
@@ -26,7 +27,7 @@ The setup has three steps:
 
 ```sh
 npm start      # serves public/ and prints every LAN URL
-npm test       # runs the scheduling and import/export tests
+npm test       # runs the scheduling, storage and import/export tests
 ```
 
 When `certs/cert.pem` and `certs/key.pem` exist, the server serves HTTPS on port **8443**. It also serves plain HTTP on port 8080, but don't use that address on the phone. To use other ports, set `HTTPS_PORT` and `PORT`.
@@ -129,7 +130,7 @@ The project has no build step and no dependencies. It is plain HTML, CSS and Jav
 
 ```
 server.js               zero-dependency static server (HTTP + optional HTTPS)
-tests/                  node --test (scheduling rules, import/export)
+tests/                  node --test (scheduling rules, storage, import/export)
 public/
   index.html, manifest.webmanifest, sw.js, css/app.css, img/
   js/app.js             boot, router, tab bar, service worker updates
@@ -139,7 +140,7 @@ public/
   js/io.js              backup export / import / share
   js/icons.js           inline SVG icons (Lucide, ISC license)
   js/ui.js              DOM helpers, sheets, dialogs, toasts
-  js/screens/           home, tasks, task-form, settings
+  js/screens/           home, tasks, task-form, checklists, checklist-view, checklist-form, settings
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the full spec and project rules.
