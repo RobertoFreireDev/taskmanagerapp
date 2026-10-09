@@ -6,13 +6,15 @@
 import { isValidKey, isoToLocalKey } from './dates.js';
 import { RECURRENCE_TYPES } from './schedule.js';
 import { DEFAULT_ICON, isIconKey } from './icons.js';
+import { MAX_EMOTIONS, isEmotionKey, isEnergyLevel } from './moods.js';
 
 export const STORAGE_KEY = 'taskmanager.state';
 export const LAST_EXPORT_KEY = 'taskmanager.lastExport';
 export const CORRUPT_KEY = 'taskmanager.state.corrupt';
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const NAME_MAX = 80;
 export const TEXT_MAX = 2000;
+export const JOURNAL_TEXT_MAX = 20000;
 
 /** Thrown for data that cannot be loaded or imported. The message is shown to the user. */
 export class DataError extends Error {
@@ -30,10 +32,12 @@ export class DataError extends Error {
 const MIGRATIONS = {
   // 1 → 2: standalone checklists.
   1: (data) => ({ ...data, schemaVersion: 2, checklists: [] }),
+  // 2 → 3: daily journal.
+  2: (data) => ({ ...data, schemaVersion: 3, journal: {} }),
 };
 
 export function emptyState() {
-  return { schemaVersion: SCHEMA_VERSION, tasks: [], progress: {}, checklists: [] };
+  return { schemaVersion: SCHEMA_VERSION, tasks: [], progress: {}, checklists: [], journal: {} };
 }
 
 /** Brings raw parsed data up to the current schema and normalizes it. Throws DataError. */
@@ -86,7 +90,31 @@ function normalizeState(data) {
     listIds.add(list.id);
     return list;
   });
-  return { schemaVersion: SCHEMA_VERSION, tasks, progress, checklists };
+
+  const journal = normalizeJournal(data.journal ?? {});
+  return { schemaVersion: SCHEMA_VERSION, tasks, progress, checklists, journal };
+}
+
+/** Journal entries keyed by local date. Entries that record nothing are dropped. */
+function normalizeJournal(raw) {
+  if (!isPlainObject(raw)) throw new DataError('"journal" must be an object.');
+  const out = {};
+  for (const [date, entry] of Object.entries(raw)) {
+    if (!isValidKey(date)) throw new DataError(`Journal has an invalid date "${date}".`);
+    const normalized = normalizeEntry(entry);
+    if (normalized) out[date] = normalized;
+  }
+  return out;
+}
+
+function normalizeEntry(e) {
+  if (!isPlainObject(e)) return null;
+  const text = cleanText(e.text, JOURNAL_TEXT_MAX);
+  const emotions = Array.isArray(e.emotions) ? [...new Set(e.emotions.filter(isEmotionKey))].slice(0, MAX_EMOTIONS) : [];
+  const energy = isEnergyLevel(e.energy) ? e.energy : null;
+  if (!text && !emotions.length && energy === null) return null;
+  const createdAt = isTimestamp(e.createdAt) ? e.createdAt : new Date().toISOString();
+  return { text, emotions, energy, createdAt, updatedAt: isTimestamp(e.updatedAt) ? e.updatedAt : createdAt };
 }
 
 function normalizeTask(t, i) {
@@ -422,13 +450,41 @@ export function setListItemsChecked(listId, itemIds, checked) {
   if (changed) commit();
 }
 
+// ---------------------------------------------------------------------------
+// Journal: at most one entry per local day.
+
+export function getJournalEntry(date) {
+  return state.journal[date] ?? null;
+}
+
+/**
+ * Merges any of { text, emotions, energy } into a day's entry. An entry left
+ * with nothing in it is removed. Returns the stored entry, or null.
+ */
+export function updateJournalEntry(date, fields) {
+  if (!isValidKey(date)) return null;
+  const old = state.journal[date];
+  const now = new Date().toISOString();
+  const entry = normalizeEntry({ ...old, ...fields, createdAt: old?.createdAt ?? now, updatedAt: now });
+  if (entry) state.journal[date] = entry;
+  else delete state.journal[date];
+  commit();
+  return entry;
+}
+
+export function deleteJournalEntry(date) {
+  if (!Object.hasOwn(state.journal, date)) return;
+  delete state.journal[date];
+  commit();
+}
+
 /** Replaces everything with already-migrated state (import). */
 export function replaceState(next) {
   state = next;
   commit();
 }
 
-/** Wipes all tasks, progress, checklists and the last-export marker. */
+/** Wipes all tasks, progress, checklists, journal entries and the last-export marker. */
 export function clearAll() {
   state = emptyState();
   try {

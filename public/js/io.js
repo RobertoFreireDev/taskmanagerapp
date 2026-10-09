@@ -8,7 +8,7 @@ import { SCHEMA_VERSION, DataError, migrate, setLastExport } from './store.js';
 export const APP_ID = 'task-manager-pwa';
 export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 
-/** The export document. Always includes quick tasks and checklists. */
+/** The export document. Always includes quick tasks, checklists and the journal. */
 export function buildExport(state, now = new Date()) {
   return {
     app: APP_ID,
@@ -17,6 +17,7 @@ export function buildExport(state, now = new Date()) {
     tasks: state.tasks,
     progress: state.progress,
     checklists: state.checklists,
+    journal: state.journal,
   };
 }
 
@@ -96,6 +97,7 @@ export function parseImport(text) {
     tasks: data.tasks,
     progress: data.progress ?? {},
     checklists: data.checklists ?? [],
+    journal: data.journal ?? {},
   });
   const progressRecords = Object.values(state.progress).reduce((n, byDate) => n + Object.keys(byDate).length, 0);
   return {
@@ -104,6 +106,7 @@ export function parseImport(text) {
       tasks: state.tasks.length,
       checklists: state.checklists.length,
       progressRecords,
+      journalEntries: Object.keys(state.journal).length,
       exportedAt: typeof data.exportedAt === 'string' ? data.exportedAt : null,
     },
   };

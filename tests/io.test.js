@@ -45,18 +45,25 @@ function sampleState() {
       },
       { id: 'empty', icon: 'task', name: 'Empty list', items: [], createdAt: ts, updatedAt: ts },
     ],
+    journal: {
+      '2026-10-08': { text: 'Long day.\nGood walk though.', emotions: ['tired', 'grateful'], energy: 43, createdAt: ts, updatedAt: ts },
+      '2026-10-07': { text: '', emotions: [], energy: 0, createdAt: ts, updatedAt: ts },
+      '2026-09-30': { text: 'Only words.', emotions: [], energy: null, createdAt: ts, updatedAt: ts },
+    },
   });
 }
 
 describe('export → import', () => {
-  test('round-trips the exact same state, quick tasks and checklists included', () => {
+  test('round-trips the exact same state, quick tasks, checklists and journal included', () => {
     const state = sampleState();
     const file = JSON.stringify(buildExport(state, new Date(ts)), null, 2);
     const { state: restored, summary } = parseImport(file);
     assert.deepEqual(restored, state);
-    assert.deepEqual(summary, { tasks: 4, checklists: 2, progressRecords: 3, exportedAt: ts });
+    assert.deepEqual(summary, { tasks: 4, checklists: 2, progressRecords: 3, journalEntries: 3, exportedAt: ts });
     assert.ok(restored.tasks.some((t) => t.kind === 'quick'));
     assert.equal(restored.checklists[0].items[0].checked, true);
+    assert.deepEqual(restored.journal['2026-10-08'].emotions, ['tired', 'grateful']);
+    assert.equal(restored.journal['2026-10-07'].energy, 0);
   });
 
   test('export document shape', () => {
@@ -80,7 +87,19 @@ describe('export → import', () => {
     assert.equal(state.schemaVersion, SCHEMA_VERSION);
     assert.deepEqual(state.checklists, []);
     assert.equal(summary.checklists, 0);
+    assert.deepEqual(state.journal, {});
     assert.deepEqual(state.tasks, sampleState().tasks);
+  });
+
+  test('a schema 2 backup (before the journal) still imports, with an empty journal', () => {
+    const doc = JSON.parse(JSON.stringify(buildExport(sampleState(), new Date(ts))));
+    doc.schemaVersion = 2;
+    delete doc.journal;
+    const { state, summary } = parseImport(JSON.stringify(doc));
+    assert.equal(state.schemaVersion, SCHEMA_VERSION);
+    assert.deepEqual(state.journal, {});
+    assert.equal(summary.journalEntries, 0);
+    assert.deepEqual(state.checklists, sampleState().checklists);
   });
 });
 
@@ -177,5 +196,31 @@ describe('import validation', () => {
     const doc = base();
     delete doc.progress;
     assert.deepEqual(parseImport(JSON.stringify(doc)).state.progress, {});
+  });
+
+  test('rejects a bad journal', () => {
+    rejects({ ...base(), journal: [] }, /"journal" must be an object/);
+    rejects({ ...base(), journal: 'dear diary' }, /"journal" must be an object/);
+    const badDate = base();
+    badDate.journal['10/08/2026'] = { text: 'Hi' };
+    rejects(badDate, /Journal has an invalid date/);
+    const impossible = base();
+    impossible.journal['2026-02-30'] = { text: 'Hi' };
+    rejects(impossible, /Journal has an invalid date/);
+  });
+
+  test('normalizes journal entries', () => {
+    const doc = base();
+    doc.journal['2026-10-08'].emotions = ['unicorn', 'tired', 'tired', 'happy', 'sad', 'calm'];
+    doc.journal['2026-10-08'].energy = 50;
+    doc.journal['2026-10-08'].text = '  Trimmed  ';
+    doc.journal['2026-10-06'] = { text: '   ', emotions: ['nope'], energy: '43' }; // records nothing: dropped
+    doc.journal['2026-10-05'] = 'not an entry';
+    const { journal } = parseImport(JSON.stringify(doc)).state;
+    assert.deepEqual(journal['2026-10-08'].emotions, ['tired', 'happy', 'sad']);
+    assert.equal(journal['2026-10-08'].energy, null);
+    assert.equal(journal['2026-10-08'].text, 'Trimmed');
+    assert.equal(journal['2026-10-06'], undefined);
+    assert.equal(journal['2026-10-05'], undefined);
   });
 });

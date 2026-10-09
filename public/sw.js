@@ -6,7 +6,7 @@
  * in PRECACHE. Installed phones only pick up changes when this file changes.
  */
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CACHE_PREFIX = 'taskmanager-';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 
@@ -19,6 +19,7 @@ const PRECACHE = [
   './js/dates.js',
   './js/icons.js',
   './js/io.js',
+  './js/moods.js',
   './js/schedule.js',
   './js/store.js',
   './js/ui.js',
@@ -26,6 +27,8 @@ const PRECACHE = [
   './js/screens/checklist-view.js',
   './js/screens/checklists.js',
   './js/screens/home.js',
+  './js/screens/journal-day.js',
+  './js/screens/journal.js',
   './js/screens/settings.js',
   './js/screens/task-form.js',
   './js/screens/tasks.js',

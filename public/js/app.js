@@ -11,6 +11,8 @@ import * as taskFormScreen from './screens/task-form.js';
 import * as checklistsScreen from './screens/checklists.js';
 import * as checklistViewScreen from './screens/checklist-view.js';
 import * as checklistFormScreen from './screens/checklist-form.js';
+import * as journalScreen from './screens/journal.js';
+import * as journalDayScreen from './screens/journal-day.js';
 import * as settingsScreen from './screens/settings.js';
 
 const idParam = (m) => ({ id: decodeURIComponent(m[1]) });
@@ -24,6 +26,9 @@ const ROUTES = [
   { re: /^#\/checklists\/new$/, screen: checklistFormScreen, tab: 'checklists' },
   { re: /^#\/checklists\/([^/]+)\/edit$/, screen: checklistFormScreen, tab: 'checklists', params: idParam },
   { re: /^#\/checklists\/([^/]+)$/, screen: checklistViewScreen, tab: 'checklists', params: idParam },
+  { re: /^#\/journal$/, screen: journalScreen, tab: 'journal' },
+  { re: /^#\/journal\/(\d{4}-\d{2})$/, screen: journalScreen, tab: 'journal', params: (m) => ({ month: m[1] }) },
+  { re: /^#\/journal\/(\d{4}-\d{2}-\d{2})$/, screen: journalDayScreen, tab: 'journal', params: (m) => ({ date: m[1] }) },
   { re: /^#\/settings$/, screen: settingsScreen, tab: 'settings' },
 ];
 const DEFAULT_HASH = '#/home';
@@ -32,6 +37,7 @@ const TABS = [
   { key: 'home', label: 'Home', href: '#/home', icon: 'today' },
   { key: 'tasks', label: 'Tasks', href: '#/tasks', icon: 'list' },
   { key: 'checklists', label: 'Checklists', href: '#/checklists', icon: 'clipboard' },
+  { key: 'journal', label: 'Journal', href: '#/journal', icon: 'journal' },
   { key: 'settings', label: 'Settings', href: '#/settings', icon: 'settings' },
 ];
 

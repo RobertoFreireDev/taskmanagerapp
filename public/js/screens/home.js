@@ -1,5 +1,6 @@
 /*
- * Home (#/home): today's TO DO, Pending and Done sections, plus quick tasks.
+ * Home (#/home): today's TO DO, Pending and Done sections, quick tasks, and
+ * today's journal entry.
  */
 
 import {
@@ -9,6 +10,7 @@ import { homeSections, checklistProgress } from '../schedule.js';
 import { todayKey, formatLong, formatShort } from '../dates.js';
 import { h, icon, uid, openSheet, confirmDialog, toast, listEditor, preserveFocus } from '../ui.js';
 import { renderIcon } from '../icons.js';
+import { journalEditor } from './journal-day.js';
 
 const SECTIONS = [
   { key: 'todo', title: 'To do', empty: 'Nothing due today.' },
@@ -23,6 +25,13 @@ const collapsed = new Set();
 export function mount({ header, main }) {
   let today = todayKey();
 
+  // Task sections are rebuilt on every change. The journal is built once per
+  // day and only updated in place, so typing in it never loses the caret.
+  const sectionsEl = h('div', { class: 'home-sections' });
+  let editor = journalEditor(today);
+  let journalSection = renderJournal();
+  main.replaceChildren(sectionsEl, journalSection);
+
   function renderHeader() {
     header.replaceChildren(
       h('div', { class: 'header-titles' }, h('h1', {}, 'Today'), h('p', { class: 'header-sub' }, formatLong(today, today))),
@@ -33,37 +42,56 @@ export function mount({ header, main }) {
   function render() {
     const state = getState();
     const sections = homeSections(state, today);
-    preserveFocus(main, () => {
-      main.replaceChildren(...SECTIONS.map((def) => renderSection(def, sections[def.key], state)));
+    preserveFocus(sectionsEl, () => {
+      sectionsEl.replaceChildren(...SECTIONS.map((def) => renderSection(def, sections[def.key], state)));
     });
   }
 
-  function renderSection(def, items, state) {
-    const bodyId = `section-${def.key}`;
-    const isCollapsed = collapsed.has(def.key);
+  /** A section with a heading that collapses it. count is optional. */
+  function collapsible({ key, title, count, content, onExpand }) {
+    const bodyId = `section-${key}`;
+    const isCollapsed = collapsed.has(key);
     const toggle = h(
       'button',
       { type: 'button', class: 'section-toggle', 'aria-expanded': String(!isCollapsed), 'aria-controls': bodyId, dataset: { focusKey: bodyId } },
       h('span', { class: 'section-dot', 'aria-hidden': 'true' }),
-      h('span', { class: 'section-title' }, def.title),
-      h('span', { class: 'section-count' }, String(items.length)),
+      h('span', { class: 'section-title' }, title),
+      count == null ? null : h('span', { class: 'section-count' }, String(count)),
       icon('chevronDown', 'icon chevron'),
     );
-    const body = h(
-      'div',
-      { class: 'section-body', id: bodyId, hidden: isCollapsed },
-      items.length
-        ? h('ul', { class: 'card-list' }, items.map((item) => h('li', {}, renderCard(item, def.key, state))))
-        : h('p', { class: 'empty-line' }, def.empty),
-    );
+    const body = h('div', { class: 'section-body', id: bodyId, hidden: isCollapsed }, content);
     toggle.addEventListener('click', () => {
-      const nowCollapsed = !collapsed.has(def.key);
-      if (nowCollapsed) collapsed.add(def.key);
-      else collapsed.delete(def.key);
+      const nowCollapsed = !collapsed.has(key);
+      if (nowCollapsed) collapsed.add(key);
+      else collapsed.delete(key);
       toggle.setAttribute('aria-expanded', String(!nowCollapsed));
       body.hidden = nowCollapsed;
+      if (!nowCollapsed) onExpand?.();
     });
-    return h('section', { class: `home-section is-${def.key}` }, h('h2', { class: 'section-heading' }, toggle), body);
+    return h('section', { class: `home-section is-${key}` }, h('h2', { class: 'section-heading' }, toggle), body);
+  }
+
+  function renderSection(def, items, state) {
+    return collapsible({
+      key: def.key,
+      title: def.title,
+      count: items.length,
+      content: items.length
+        ? h('ul', { class: 'card-list' }, items.map((item) => h('li', {}, renderCard(item, def.key, state))))
+        : h('p', { class: 'empty-line' }, def.empty),
+    });
+  }
+
+  function renderJournal() {
+    return collapsible({
+      key: 'journal',
+      title: 'Journal',
+      content: [
+        h('div', { class: 'journal-card' }, editor.el),
+        h('div', { class: 'journal-more' }, h('a', { class: 'btn btn-ghost', href: '#/journal' }, 'All entries', icon('chevronRight'))),
+      ],
+      onExpand: () => editor.update(),
+    });
   }
 
   function renderCard({ task, date }, section, state) {
@@ -169,12 +197,27 @@ export function mount({ header, main }) {
 
   renderHeader();
   render();
-  const unsubscribe = subscribe(render);
+  const unsubscribe = subscribe(() => {
+    render();
+    editor.update();
+  });
 
   return {
-    unmount: unsubscribe,
+    unmount() {
+      unsubscribe();
+      editor.destroy();
+    },
     refresh() {
-      today = todayKey();
+      const next = todayKey();
+      if (next !== today) {
+        // A new day: save the old day's text, then start on the new day's entry.
+        editor.destroy();
+        today = next;
+        editor = journalEditor(today);
+        const fresh = renderJournal();
+        journalSection.replaceWith(fresh);
+        journalSection = fresh;
+      }
       renderHeader();
       render();
     },

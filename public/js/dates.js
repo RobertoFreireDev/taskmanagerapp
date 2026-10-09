@@ -116,6 +116,49 @@ export function startOfNextYear(key) {
 }
 
 // ---------------------------------------------------------------------------
+// Months (the journal shows one month at a time).
+
+const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
+
+/** "YYYY-MM"; month is 1..12 */
+export function monthKey(year, month) {
+  return `${pad(year, 4)}-${pad(month)}`;
+}
+
+/** { year, month } of a "YYYY-MM" key, or null if it is not one. */
+export function parseMonthKey(key) {
+  if (typeof key !== 'string' || !MONTH_KEY_RE.test(key)) return null;
+  const year = Number(key.slice(0, 4));
+  const month = Number(key.slice(5, 7));
+  return month >= 1 && month <= 12 ? { year, month } : null;
+}
+
+/** The month n months after (n < 0: before) the given one, as { year, month }. */
+export function shiftMonth(year, month, n) {
+  const index = year * 12 + (month - 1) + n;
+  return { year: Math.floor(index / 12), month: (((index % 12) + 12) % 12) + 1 };
+}
+
+/** Months from a to b, each { year, month } (positive when b is later). */
+export function compareMonths(a, b) {
+  return (b.year - a.year) * 12 + (b.month - a.month);
+}
+
+/**
+ * A month's days as weeks of 7 cells, each a key or null (padding before the
+ * 1st and after the last day). Weeks start on WEEK_STARTS_ON.
+ */
+export function monthGrid(year, month) {
+  const lead = (weekday(makeKey(year, month, 1)) - WEEK_STARTS_ON + 7) % 7;
+  const cells = Array(lead).fill(null);
+  for (let day = 1; day <= daysInMonth(year, month); day++) cells.push(makeKey(year, month, day));
+  while (cells.length % 7) cells.push(null);
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
+// ---------------------------------------------------------------------------
 // Bridges between keys and the device clock (local time).
 
 /** Key for a Date, read in local time. */
@@ -159,6 +202,11 @@ export function formatShort(key, ref = todayKey()) {
 export function formatWithWeekday(key) {
   const { year, month, day } = parseKey(key);
   return `${WEEKDAY_SHORT[weekday(key)]}, ${MONTH_SHORT[month - 1]} ${day}, ${year}`;
+}
+
+/** "October 2026" */
+export function formatMonthYear(year, month) {
+  return `${MONTH_LONG[month - 1]} ${year}`;
 }
 
 /** Local date and time of an ISO timestamp, e.g. "Oct 8, 2026, 11:00 AM". */

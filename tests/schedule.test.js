@@ -6,7 +6,7 @@ import {
 } from '../public/js/schedule.js';
 import {
   addDays, daysBetween, weekday, weekOf, weeksBetween, monthsBetween, isValidKey, localDateKey,
-  isoToLocalKey, daysInMonth, formatShort,
+  isoToLocalKey, daysInMonth, formatShort, monthKey, parseMonthKey, shiftMonth, compareMonths, monthGrid, formatMonthYear,
 } from '../public/js/dates.js';
 
 // 2026-10-08 is a Thursday. Week of Sun 2026-10-04 … Sat 2026-10-10.
@@ -91,6 +91,48 @@ describe('dates helpers', () => {
   test('formatShort adds the year only when it differs from the reference', () => {
     assert.equal(formatShort('2026-10-05', TODAY), 'Oct 5');
     assert.equal(formatShort('2025-01-01', TODAY), 'Jan 1, 2025');
+  });
+
+  test('month keys build, parse and reject malformed months', () => {
+    assert.equal(monthKey(2026, 3), '2026-03');
+    assert.deepEqual(parseMonthKey('2026-10'), { year: 2026, month: 10 });
+    assert.equal(parseMonthKey('2026-13'), null);
+    assert.equal(parseMonthKey('2026-00'), null);
+    assert.equal(parseMonthKey('2026-1'), null);
+    assert.equal(parseMonthKey('2026-10-08'), null);
+    assert.equal(parseMonthKey(undefined), null);
+    assert.equal(formatMonthYear(2026, 10), 'October 2026');
+  });
+
+  test('shiftMonth and compareMonths cross year boundaries', () => {
+    assert.deepEqual(shiftMonth(2026, 12, 1), { year: 2027, month: 1 });
+    assert.deepEqual(shiftMonth(2026, 1, -1), { year: 2025, month: 12 });
+    assert.deepEqual(shiftMonth(2026, 10, -22), { year: 2024, month: 12 });
+    assert.deepEqual(shiftMonth(2026, 10, 0), { year: 2026, month: 10 });
+    assert.equal(compareMonths({ year: 2025, month: 12 }, { year: 2026, month: 1 }), 1);
+    assert.equal(compareMonths({ year: 2026, month: 10 }, { year: 2026, month: 10 }), 0);
+    assert.equal(compareMonths({ year: 2026, month: 10 }, { year: 2026, month: 8 }), -2);
+  });
+
+  test('monthGrid lays a month out in Sunday-first weeks', () => {
+    // October 2026 starts on a Thursday.
+    const oct = monthGrid(2026, 10);
+    assert.equal(oct.length, 5);
+    assert.ok(oct.every((week) => week.length === 7));
+    assert.deepEqual(oct[0], [null, null, null, null, '2026-10-01', '2026-10-02', '2026-10-03']);
+    assert.deepEqual(oct[4], ['2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31']);
+    assert.equal(oct.flat().filter(Boolean).length, 31);
+
+    // February 2026 starts on a Sunday and fills exactly four weeks.
+    const feb = monthGrid(2026, 2);
+    assert.equal(feb.length, 4);
+    assert.equal(feb[0][0], '2026-02-01');
+    assert.equal(feb[3][6], '2026-02-28');
+
+    // Leap February.
+    const leap = monthGrid(2028, 2).flat().filter(Boolean);
+    assert.equal(leap.length, 29);
+    assert.equal(leap.at(-1), '2028-02-29');
   });
 });
 

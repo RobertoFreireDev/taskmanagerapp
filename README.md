@@ -2,10 +2,11 @@
 
 An offline task manager for your phone, with a dark theme. You install it to the home screen of an Android phone or iPhone from a small server on your PC. It does not go through an app store, and it has no account, no cloud and no sync. All data stays on the phone. To move data between devices, export a backup file and import it on the other device.
 
-- **Home**: today's tasks in three sections: **To do**, **Pending** (missed and not done yet) and **Done**. Use **+ Quick task** for one-off tasks.
+- **Home**: today's tasks in three sections: **To do**, **Pending** (missed and not done yet) and **Done**. Use **+ Quick task** for one-off tasks. Below them, write today's **Journal** entry.
 - **Tasks**: recurring tasks. Each one can repeat once, daily, weekly, monthly or yearly, every N days, weeks, months or years. Tasks can have notes and a checklist.
 - **Checklists**: reusable lists for double-checking you haven't missed anything, such as a packing list for a trip. Tick items off, then **Uncheck all** to use the list again. They have no dates and never appear on Home.
-- **Settings**: back up (tasks, progress and checklists), restore, check for updates, and delete all data.
+- **Journal**: a few lines a day, up to 3 feelings (from 32) and your energy level (0–100% in 8 steps). Browse a month at a time on a calendar, jump to any month or year, and fill in a day you missed. Text saves as you type.
+- **Settings**: back up (tasks, progress, checklists and journal), restore, check for updates, and delete all data.
 
 ## Requirements
 
@@ -139,8 +140,9 @@ public/
   js/store.js           state, migrations, localStorage
   js/io.js              backup export / import / share
   js/icons.js           inline SVG icons (Lucide, ISC license)
+  js/moods.js           journal emotions (emoji) and energy levels
   js/ui.js              DOM helpers, sheets, dialogs, toasts
-  js/screens/           home, tasks, task-form, checklists, checklist-view, checklist-form, settings
+  js/screens/           home, tasks, task-form, checklists, checklist-view, checklist-form, journal, journal-day, settings
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the full spec and project rules.

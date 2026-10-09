@@ -72,7 +72,7 @@ So the answer to "without a certificate?" is **yes on Android, no on iPhone**. S
 ├── tests/
 │   ├── schedule.test.js      # node --test
 │   ├── io.test.js            # export / import validation
-│   └── store.test.js         # migration, checklist CRUD
+│   └── store.test.js         # migration, checklist + journal CRUD
 └── public/
     ├── index.html
     ├── manifest.webmanifest
@@ -85,6 +85,7 @@ So the answer to "without a certificate?" is **yes on Android, no on iPhone**. S
         ├── store.js          # load/save/migrate state in localStorage
         ├── schedule.js       # pure: isDue, home sections
         ├── icons.js          # 32 inline SVG icons + picker
+        ├── moods.js          # pure: 32 journal emotions (emoji) + 8 energy levels
         ├── io.js             # export / import / share
         ├── ui.js             # small DOM helpers, sheets, confirm dialog, toasts
         └── screens/
@@ -94,10 +95,12 @@ So the answer to "without a certificate?" is **yes on Android, no on iPhone**. S
             ├── checklists.js       # checklist index
             ├── checklist-view.js   # tick items, uncheck all
             ├── checklist-form.js   # create / edit / delete a checklist
+            ├── journal.js          # month calendar + entries list
+            ├── journal-day.js      # one day's entry; exports journalEditor() used by Home
             └── settings.js
 ```
 
-Routing uses hashes: `#/home` (default), `#/tasks`, `#/tasks/new`, `#/tasks/:id`, `#/checklists`, `#/checklists/new`, `#/checklists/:id`, `#/checklists/:id/edit`, `#/settings`. A fixed bottom tab bar holds four tabs: Home, Tasks, Checklists, Settings.
+Routing uses hashes: `#/home` (default), `#/tasks`, `#/tasks/new`, `#/tasks/:id`, `#/checklists`, `#/checklists/new`, `#/checklists/:id`, `#/checklists/:id/edit`, `#/journal` (current month), `#/journal/YYYY-MM`, `#/journal/YYYY-MM-DD`, `#/settings`. A fixed bottom tab bar holds five tabs: Home, Tasks, Checklists, Journal, Settings.
 
 ---
 
@@ -132,10 +135,11 @@ All state lives in one `localStorage` key, `taskmanager.state`, as JSON. Save af
 
 ```js
 State = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   tasks: Task[],
   progress: { [taskId]: { [occurrenceDate: "YYYY-MM-DD"]: Occurrence } },
-  checklists: Checklist[]
+  checklists: Checklist[],
+  journal: { [date: "YYYY-MM-DD"]: JournalEntry }
 }
 
 Task = {
@@ -173,12 +177,21 @@ Checklist = {              // standalone and reusable; unrelated to tasks and da
   createdAt: string,
   updatedAt: string
 }
+
+JournalEntry = {           // at most one per local day
+  text: string,            // trimmed, max 20000 chars
+  emotions: EmotionKey[],  // 0..3 unique keys from moods.js EMOTIONS
+  energy: number | null,   // one of ENERGY_LEVELS: 0, 14, 29, 43, 57, 71, 86, 100
+  createdAt: string,
+  updatedAt: string
+}
 ```
 
 - `load()` runs `migrate(raw)`. Every future schema change increments `schemaVersion` and adds a migration step. Never break old export files.
 - If a checklist item is deleted from a task, ignore its orphaned keys in `progress`.
 - When a task is deleted, delete its `progress` entry too.
-- Schema history: 1 → 2 added `checklists` (migration sets it to `[]`).
+- A journal entry with no text, no emotions and `energy === null` is removed, not stored empty.
+- Schema history: 1 → 2 added `checklists` (migration sets it to `[]`). 2 → 3 added `journal` (migration sets it to `{}`).
 
 ---
 
@@ -223,7 +236,8 @@ Use `node --test tests/`. The tests must cover:
 
 ### Home (`#/home`)
 - **Header:** the title "Today" plus the formatted local date. On the right, a **"+ Quick task"** button.
-- **Sections:** TO DO, Pending and Done, in that order. Each section can be collapsed. An empty section shows a short muted line.
+- **Sections:** TO DO, Pending, Done and Journal, in that order. Each section can be collapsed. An empty task section shows a short muted line.
+- **Journal section:** today's entry, edited in place with the shared `journalEditor()` (see Journal below), plus an "All entries" link to `#/journal`. The task sections re-render on every store change; the journal section is built once per day and only updated in place, so a save never steals focus or the caret while the user types.
 - **Task card:**
   - It shows the icon, the name, and a checklist progress count such as "2/5".
   - Tapping the card expands it to show the notes and the checklist. Checkbox state is saved in that occurrence's `progress` entry.
@@ -261,6 +275,20 @@ Reusable lists for double-checking that nothing is missed, such as a packing lis
 - **Checklist (`#/checklists/:id`):** a header with Back and **Edit**; a progress line and bar; the items as large checkbox rows. Ticks save immediately and persist until cleared. **Uncheck all** clears every tick so the list can be reused, with an Undo toast.
 - **Form (`#/checklists/new`, `#/checklists/:id/edit`):** icon picker, Name (required) and an Items list that is editable and reorderable; Enter adds the next row. Editing keeps the ticks of items that remain. Edit mode has a Delete button with confirmation.
 
+### Journal (`#/journal`, `#/journal/YYYY-MM`, `#/journal/YYYY-MM-DD`)
+One entry per local day: up to **3 emotions**, one **energy level** and free text.
+- **Editor (`journalEditor(date)` in `journal-day.js`, shared with Home):**
+  - **Feelings** button → bottom sheet with a 4-column grid of the 32 emotions (emoji + label). Each tap saves immediately; once 3 are chosen the others are disabled. Done closes it.
+  - **Energy** button → sheet with the 8 levels as battery icons (0–1 danger, 2–3 warning, 4–5 accent, 6–7 success). A tap saves and closes; Clear removes the level.
+  - **Text** ("How was your day?") autosaves 600 ms after typing stops, on blur, on `visibilitychange→hidden`/`pagehide`, and when the editor is destroyed. A status line says "Saved". There is no Save button.
+- **Month (`#/journal`, `#/journal/YYYY-MM`):**
+  - Header: "Journal" and the total entry count; a **Today** button when not on the current month.
+  - Pager: ‹ Month Year ▾ ›. Arrows switch months in place with `history.replaceState`, so Back leaves the Journal. Tapping the title opens a month/year picker (year stepper + 12 months; months with entries have a dot).
+  - A calendar (weeks start on Sunday). Past days and today link to the day; a day with an entry shows its first emotion's emoji, or a dot when it has none. Today has an accent ring.
+  - The month's entries, newest first: date, emotions, energy and a 3-line text preview.
+  - Future or invalid months show the current month. Next is disabled on the current month.
+- **Day (`#/journal/YYYY-MM-DD`):** Back to the month, ‹ › for previous/next day (replace navigation; next disabled on today), the editor, and **Delete entry** with confirmation when the entry exists. Past days are editable; future days show "This day hasn't happened yet"; impossible dates show "This date doesn't exist".
+
 ### Settings (`#/settings`)
 - **Export:**
   - Build the export JSON (section 10). The filename is `tasks-backup-YYYY-MM-DD.json`.
@@ -269,7 +297,7 @@ Reusable lists for double-checking that nothing is missed, such as a packing lis
   - Provide two buttons: **Share backup…** (shown only when supported) and **Download backup**.
 - **Import:**
   - Use `<input type="file" accept=".json,application/json">`. Parse the file and validate it (section 10).
-  - Show a summary: "X tasks, Z checklists, Y progress records, exported on <date>".
+  - Show a summary: "X tasks, Z checklists, Y progress records, J journal entries, exported on <date>".
   - Confirm with "This will replace all current data", then replace the state and re-render.
   - Invalid files show a clear error and change nothing.
 - **Storage note:** state that data lives only on this device and that removing the app deletes it. Show the last export date, saved in localStorage under `taskmanager.lastExport`.
@@ -303,6 +331,10 @@ There are 32 icons, stored as **inline SVG strings** with no icon fonts or CDN. 
 
 Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unknown keys fall back to `task`.
 
+### Journal moods (`moods.js`)
+- **Emotions** are emoji drawn by the phone's own emoji font, so nothing is downloaded. Use only emoji from Unicode 11 or older, with no ZWJ sequences or variation selectors, so older phones never show empty boxes. `EMOTIONS` is `{ key: { label, emoji } }` in picker order (positive, neutral, negative): happy, grateful, calm, excited, loved, proud, motivated, confident, relaxed, hopeful, inspired, focused · neutral, surprised, confused, thoughtful, bored · sad, tired, anxious, burnout, stressed, angry, frustrated, lonely, overwhelmed, scared, sick, disappointed, guilty, insecure, hurt.
+- **Energy** levels are `ENERGY_LEVELS = [0, 14, 29, 43, 57, 71, 86, 100]` (even 1/7 steps). `renderEnergy(level)` draws a battery SVG with one bar per step; `energyTone(level)` picks its color.
+
 ---
 
 ## 9. UI / styling (`app.css`)
@@ -321,6 +353,7 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 | `--success` | `#4cc38a` |
 | `--warning` | `#f0b44c` (Pending) |
 | `--danger` | `#ef5f5f` |
+| `--journal` | `#b99cff` (Journal dots) |
 
 **Layout and fit:**
 - Use the system font stack: `-apple-system, system-ui, Roboto, sans-serif`.
@@ -344,11 +377,12 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 ```json
 {
   "app": "task-manager-pwa",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "exportedAt": "2026-10-08T11:00:00.000Z",
   "tasks": [ /* Task */ ],
   "progress": { /* taskId -> date -> Occurrence */ },
-  "checklists": [ /* Checklist */ ]
+  "checklists": [ /* Checklist */ ],
+  "journal": { /* date -> JournalEntry */ }
 }
 ```
 
@@ -357,11 +391,13 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 - `schemaVersion` must be ≤ current; older versions run through `migrate`.
 - `tasks` must be an array, and every task must have an `id`, a `name` and a valid `recurrence.type`.
 - `checklists`, when present, must be an array, and every checklist must have an `id` and a `name`. Schema 1 files have no checklists.
+- `journal`, when present, must be an object keyed by valid dates. Schema 1 and 2 files have no journal.
 - Dates must match `/^\d{4}-\d{2}-\d{2}$/`.
 - Unknown icons map to `task`.
 - Drop `progress` entries for unknown task IDs.
+- In journal entries, drop unknown or duplicate emotions and keep at most 3; an `energy` that is not one of `ENERGY_LEVELS` becomes `null`; entries left empty are dropped.
 
-**Behavior:** import always **replaces** the whole state, after confirmation. Export always includes quick tasks and checklists too.
+**Behavior:** import always **replaces** the whole state, after confirmation. Export always includes quick tasks, checklists and the journal too.
 
 ---
 
@@ -384,3 +420,4 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 - Import **replaces** all data. There is no merge.
 - Completing a task does **not** require every checklist item to be ticked.
 - Checklists (the tab) are independent of tasks: CRUD only, no dates and no completion. Ticks persist until **Uncheck all**.
+- Journal: one entry per day with up to **3 emotions** (32 options, shown as **emoji**), one **energy level** (8 even steps, 0–100%) and free text. Today's entry is written on Home, below Done; the Journal tab shows a **calendar plus entries list**, one month at a time. Past days can be written or edited; future days cannot. Text autosaves.

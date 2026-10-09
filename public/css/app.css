@@ -21,8 +21,11 @@
   --warning-soft: rgba(240, 180, 76, 0.14);
   --danger-soft: rgba(239, 95, 95, 0.12);
   --danger-line: rgba(239, 95, 95, 0.4);
+  --journal: #b99cff;
 
   --font: -apple-system, system-ui, Roboto, sans-serif;
+  /* The phone's own emoji font: nothing is downloaded. */
+  --font-emoji: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   --gutter: 16px;
   --radius: 14px;
   --tabbar-h: 60px;
@@ -112,7 +115,13 @@ h3 {
 .icon-option,
 .icon-field,
 .sheet-header,
-.toast {
+.toast,
+.mood-btn,
+.emotion-option,
+.energy-option,
+.month-title,
+.month-option,
+.cal-cell {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -878,6 +887,473 @@ h3 {
 
 .list-items .check-row {
   min-height: 52px;
+}
+
+/* --------------------------------------------------------------- Journal */
+
+.emoji {
+  font-family: var(--font-emoji);
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+}
+
+.energy-icon {
+  display: inline-flex;
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+
+.energy-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tone-danger {
+  color: var(--danger);
+}
+
+.tone-warning {
+  color: var(--warning);
+}
+
+.tone-accent {
+  color: var(--accent);
+}
+
+.tone-success {
+  color: var(--success);
+}
+
+.home-sections + .home-section {
+  margin-top: 10px;
+}
+
+.is-journal .section-dot {
+  background: var(--journal);
+}
+
+.journal-card {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.journal-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.mood-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.mood-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 76px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.mood-btn-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mood-btn-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 26px;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mood-btn-main .emoji {
+  font-size: 22px;
+}
+
+.mood-btn-main.is-empty {
+  gap: 4px;
+  color: var(--accent);
+}
+
+.mood-btn-main.is-empty .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.mood-btn-sub {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input.journal-text {
+  min-height: 120px;
+}
+
+.journal-status {
+  min-height: 18px;
+  margin: -4px 2px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.journal-more {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.journal-more .btn {
+  padding: 0 4px 0 10px;
+  gap: 2px;
+}
+
+.sheet-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.emotion-grid,
+.energy-grid,
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.emotion-option,
+.energy-option,
+.month-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 2px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* Tighter than the other grids so "Overwhelmed" fits a 360 px screen. */
+.emotion-grid {
+  gap: 6px;
+}
+
+.emotion-option {
+  min-height: 78px;
+  padding: 8px 1px;
+  font-size: 11.5px;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.emotion-option .emoji {
+  font-size: 28px;
+}
+
+.emotion-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.energy-option {
+  min-height: 76px;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.energy-option .energy-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.month-option {
+  min-height: 52px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.emotion-option[aria-pressed='true'],
+.energy-option[aria-pressed='true'],
+.month-option[aria-current='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.emotion-option:disabled,
+.month-option:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.month-dot {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: var(--journal);
+}
+
+.year-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 10px;
+}
+
+.picker-year {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.month-pager {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 -6px 8px;
+}
+
+.month-title {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.month-title .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+
+.calendar {
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.cal-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.cal-head span {
+  padding: 6px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* The transparent border spaces the cells visually; the tap area stays full width. */
+.cal-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 52px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background-clip: padding-box;
+  color: var(--text);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.cal-day.has-entry {
+  background-color: var(--surface-2);
+}
+
+.cal-day.is-today {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.cal-day.is-today .cal-num {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.cal-day.is-future {
+  color: var(--placeholder);
+}
+
+a.cal-day:focus-visible {
+  outline-offset: -2px;
+}
+
+.cal-num {
+  line-height: 1.1;
+}
+
+.cal-mark.emoji {
+  font-size: 18px;
+}
+
+.cal-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--journal);
+}
+
+.journal-list-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 8px;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.journal-entries {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.journal-entries > li {
+  min-width: 0;
+}
+
+.journal-entries .empty-line {
+  padding-left: 4px;
+}
+
+.entry-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 56px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+}
+
+.entry-card:focus-visible {
+  outline-offset: -2px;
+}
+
+.entry-date {
+  font-weight: 600;
+}
+
+.entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.entry-emotion,
+.entry-energy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.entry-emotion .emoji {
+  font-size: 16px;
+}
+
+.entry-energy {
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-energy .energy-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.entry-text {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 15px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.header-pager {
+  display: flex;
+  flex: none;
+  margin-right: -10px;
+}
+
+.journal-day {
+  display: grid;
+  gap: 24px;
+  padding-top: 4px;
 }
 
 /* ----------------------------------------------------------------- Forms */
