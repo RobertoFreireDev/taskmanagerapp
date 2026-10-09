@@ -40,7 +40,36 @@ describe('saved data from before checklists', () => {
     assert.deepEqual(state.checklists, []);
     assert.deepEqual(state.journal, {});
     assert.equal(state.tasks[0].name, 'Walk the dog');
-    assert.deepEqual(state.progress, v1State.progress);
+    assert.deepEqual(state.progress, { walk: { '2026-10-08': { checklist: { c1: true }, completedAt: null, missedAt: null } } });
+  });
+});
+
+describe('Done and Not done', () => {
+  let data;
+  beforeEach(() => {
+    data = installStorage({ [store.STORAGE_KEY]: JSON.stringify(v1State) });
+    store.init();
+  });
+  const occ = () => saved(data).progress.walk?.['2026-10-07'];
+
+  test('Not done and Complete replace each other; Undo clears both', () => {
+    store.missOccurrence('walk', '2026-10-07');
+    assert.ok(occ().missedAt);
+    assert.equal(occ().completedAt, null);
+    store.completeOccurrence('walk', '2026-10-07');
+    assert.ok(occ().completedAt);
+    assert.equal(occ().missedAt, null);
+    store.missOccurrence('walk', '2026-10-07');
+    store.undoOccurrence('walk', '2026-10-07');
+    assert.equal(occ(), undefined); // nothing left to record
+  });
+
+  test('Undo keeps checklist ticks; unknown tasks are ignored', () => {
+    store.missOccurrence('walk', '2026-10-08');
+    store.undoOccurrence('walk', '2026-10-08');
+    assert.deepEqual(saved(data).progress.walk['2026-10-08'], { checklist: { c1: true }, completedAt: null, missedAt: null });
+    store.missOccurrence('ghost', '2026-10-08');
+    assert.equal(saved(data).progress.ghost, undefined);
   });
 });
 
@@ -50,9 +79,100 @@ describe('saved data from before the journal', () => {
     installStorage({ [store.STORAGE_KEY]: JSON.stringify({ ...v1State, schemaVersion: 2, checklists: [list] }) });
     const state = store.init();
     assert.equal(store.getLoadError(), null);
-    assert.equal(state.schemaVersion, 3);
+    assert.equal(state.schemaVersion, store.SCHEMA_VERSION);
     assert.deepEqual(state.checklists, [list]);
     assert.deepEqual(state.journal, {});
+  });
+});
+
+describe('saved data from before characters', () => {
+  test('a schema 3 state loads with its journal and no characters', () => {
+    const journal = { '2026-10-08': { text: 'Hi', emotions: ['happy'], energy: 57, createdAt: ts, updatedAt: ts } };
+    installStorage({ [store.STORAGE_KEY]: JSON.stringify({ ...v1State, schemaVersion: 3, checklists: [], journal }) });
+    const state = store.init();
+    assert.equal(store.getLoadError(), null);
+    assert.equal(state.schemaVersion, 4);
+    assert.deepEqual(state.journal, journal);
+    assert.deepEqual(state.characters, []);
+  });
+});
+
+describe('characters', () => {
+  let data;
+  beforeEach(() => {
+    data = installStorage({ [store.STORAGE_KEY]: JSON.stringify(v1State) });
+    store.init();
+  });
+
+  const habitFields = (extra = {}) => ({
+    taskId: 'walk', since: '2026-10-08', done: { xp: 10, status: 'strong' }, missed: { xp: 5, status: 'weak' }, ...extra,
+  });
+
+  test('create fills defaults, trims and saves', () => {
+    const rex = store.createCharacter({ avatar: 'dog', name: '  Rex  ' });
+    assert.equal(rex.name, 'Rex');
+    assert.equal(rex.avatar, 'dog');
+    assert.deepEqual(rex.leveling, { base: 100, step: 50 });
+    assert.deepEqual(rex.mood, { period: 'week', happyMax: 0, sadMin: 3 });
+    assert.deepEqual(rex.habits, []);
+    assert.equal(store.getCharacter(rex.id), rex);
+    assert.deepEqual(saved(data).characters, [rex]);
+  });
+
+  test('update keeps id, createdAt and habits', () => {
+    const rex = store.createCharacter({ avatar: 'dog', name: 'Rex' });
+    store.saveHabit(rex.id, null, habitFields());
+    const updated = store.updateCharacter(rex.id, {
+      avatar: 'cat', name: 'Felix', leveling: { base: 50, step: 10 }, mood: { period: 'month', happyMax: 2, sadMin: 6 }, habits: [],
+    });
+    assert.equal(updated.id, rex.id);
+    assert.equal(updated.createdAt, rex.createdAt);
+    assert.equal(updated.name, 'Felix');
+    assert.deepEqual(updated.leveling, { base: 50, step: 10 });
+    assert.deepEqual(updated.mood, { period: 'month', happyMax: 2, sadMin: 6 });
+    assert.equal(updated.habits.length, 1);
+    assert.equal(store.updateCharacter('nope', { name: 'X' }), null);
+  });
+
+  test('saveHabit attaches, edits and refuses duplicates or unknown tasks', () => {
+    const rex = store.createCharacter({ avatar: 'dog', name: 'Rex' });
+    const habit = store.saveHabit(rex.id, null, habitFields());
+    assert.ok(habit.id);
+    assert.deepEqual(habit.done, { xp: 10, status: 'strong' });
+    assert.equal(store.saveHabit(rex.id, null, habitFields()), null); // already attached
+    assert.equal(store.saveHabit(rex.id, null, habitFields({ taskId: 'ghost' })), null);
+    assert.equal(store.saveHabit('nope', null, habitFields()), null);
+    assert.equal(store.saveHabit(rex.id, 'nope', habitFields()), null);
+
+    const edited = store.saveHabit(rex.id, habit.id, habitFields({ done: { xp: 25, status: null }, since: '2026-10-01' }));
+    assert.equal(edited.id, habit.id);
+    assert.deepEqual(edited.done, { xp: 25, status: null });
+    assert.equal(edited.since, '2026-10-01');
+    assert.deepEqual(saved(data).characters[0].habits, [edited]);
+    assert.deepEqual(store.charactersUsingTask('walk').map((c) => c.id), [rex.id]);
+
+    store.deleteHabit(rex.id, habit.id);
+    assert.deepEqual(saved(data).characters[0].habits, []);
+    assert.deepEqual(store.charactersUsingTask('walk'), []);
+  });
+
+  test('deleting a task detaches it from every character', () => {
+    const rex = store.createCharacter({ avatar: 'dog', name: 'Rex' });
+    const mia = store.createCharacter({ avatar: 'cat', name: 'Mia' });
+    store.saveHabit(rex.id, null, habitFields());
+    store.saveHabit(mia.id, null, habitFields());
+    store.deleteTask('walk');
+    assert.deepEqual(saved(data).characters.map((c) => c.habits), [[], []]);
+  });
+
+  test('delete removes only that character; delete all clears characters', () => {
+    const rex = store.createCharacter({ avatar: 'dog', name: 'Rex' });
+    store.createCharacter({ avatar: 'cat', name: 'Mia' });
+    store.deleteCharacter(rex.id);
+    assert.deepEqual(saved(data).characters.map((c) => c.name), ['Mia']);
+    store.clearAll();
+    assert.deepEqual(store.getState().characters, []);
+    assert.deepEqual(saved(data), store.emptyState());
   });
 });
 

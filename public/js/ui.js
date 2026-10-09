@@ -1,6 +1,6 @@
 /*
  * Small DOM helpers: element builder, bottom sheets, confirm dialog, toasts,
- * and the editable list used for notes and checklists.
+ * the editable list used for notes and checklists, and form field helpers.
  */
 
 import { groupByIcon, renderIcon, uiIcon } from './icons.js';
@@ -332,6 +332,60 @@ export function listEditor({ items, label, placeholder = '', addLabel, reorder =
 
   render();
   return root;
+}
+
+// ---------------------------------------------------------------------------
+// Form fields
+
+/** A hidden error line for a field; link it with aria-describedby. */
+export function fieldError() {
+  return h('p', { id: uid('error'), class: 'field-error', hidden: true });
+}
+
+/** Shows `message` under a field and marks the input invalid. Returns the input, to focus. */
+export function showError(input, el, message) {
+  el.textContent = message;
+  el.hidden = false;
+  input.setAttribute('aria-invalid', 'true');
+  return input;
+}
+
+export function clearError(input, el) {
+  el.hidden = true;
+  input.removeAttribute('aria-invalid');
+}
+
+/**
+ * Whole-number field with − and + buttons. Calls onChange(n) after every edit
+ * with a number in [min, max], or null while the text isn't one.
+ * Returns { el, input, value } where value() reads the current number or null.
+ */
+export function stepper({ id, value, min = 0, max = 9999, label, unit, onChange, describedBy }) {
+  const input = h('input', {
+    id, class: 'input stepper-input', type: 'number', inputmode: 'numeric', pattern: '[0-9]*', min: String(min), max: String(max), step: '1',
+    value: String(value), 'aria-describedby': describedBy,
+  });
+  const read = () => {
+    const text = input.value.trim();
+    if (!/^\d+$/.test(text)) return null;
+    const n = Number(text);
+    return n >= min && n <= max ? n : null;
+  };
+  const stepBy = (delta) => {
+    const n = Math.min(max, Math.max(min, (read() ?? min) + delta));
+    input.value = String(n);
+    onChange?.(n);
+  };
+  input.addEventListener('input', () => onChange?.(read()));
+  const el = h(
+    'div',
+    { class: 'stepper' },
+    h('button', { type: 'button', class: 'icon-btn stepper-btn', 'aria-label': `Decrease ${label}`, onclick: () => stepBy(-1) }, icon('minus')),
+    input,
+    h('button', { type: 'button', class: 'icon-btn stepper-btn', 'aria-label': `Increase ${label}`, onclick: () => stepBy(1) }, icon('plus')),
+    unit ? h('span', { class: 'stepper-unit' }, unit) : null,
+  );
+  return { el, input, value: read };
 }
 
 export function autoGrow(textarea) {

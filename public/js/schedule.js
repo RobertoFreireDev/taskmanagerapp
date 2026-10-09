@@ -104,6 +104,26 @@ export function nextOccurrences(task, from, count = 5, maxDays = LOOKBACK_DAYS *
   return out;
 }
 
+/** Every due date in [from, to], oldest first. */
+export function dueDatesBetween(task, from, to) {
+  const rec = task?.recurrence;
+  if (!rec || !isValidKey(rec.startDate) || !isValidKey(from) || !isValidKey(to) || !RECURRENCE_TYPES.includes(rec.type)) return [];
+  const start = rec.startDate;
+  if (rec.type === 'once') return start >= from && start <= to ? [start] : [];
+
+  const interval = normalizeInterval(rec.interval);
+  const out = [];
+  for (let d = start > from ? start : from; d <= to; ) {
+    if (isDue(task, d)) {
+      out.push(d);
+      d = addDays(d, 1);
+    } else {
+      d = skipAhead(rec, d, interval);
+    }
+  }
+  return out;
+}
+
 /** Next day worth checking after a non-due `d`: jumps over periods the interval rules out. */
 function skipAhead(rec, d, interval) {
   const start = rec.startDate;
@@ -130,38 +150,51 @@ function skipAhead(rec, d, interval) {
 export function pendingDate(task, progress, today) {
   const rec = task?.recurrence;
   if (!rec || !isValidKey(rec.startDate) || rec.startDate >= today) return null;
-  const done = (d) => Boolean(progress?.[d]?.completedAt);
+  const resolved = (d) => isResolved(progress?.[d]);
 
-  // A once task that was never done stays pending, however old it is.
-  if (rec.type === 'once') return done(rec.startDate) ? null : rec.startDate;
+  // A once task that was never done or marked not done stays pending, however old it is.
+  if (rec.type === 'once') return resolved(rec.startDate) ? null : rec.startDate;
 
   let lower = rec.startDate;
-  const lastDone = lastCompletedDate(progress);
-  if (lastDone && lastDone >= lower) lower = addDays(lastDone, 1);
+  const lastResolved = lastResolvedDate(progress);
+  if (lastResolved && lastResolved >= lower) lower = addDays(lastResolved, 1);
   const limit = addDays(today, -LOOKBACK_DAYS);
   if (limit > lower) lower = limit;
 
   for (let d = addDays(today, -1); d >= lower; d = addDays(d, -1)) {
-    if (isDue(task, d)) return done(d) ? null : d;
+    if (isDue(task, d)) return resolved(d) ? null : d;
   }
   return null;
 }
 
-function lastCompletedDate(progress) {
+/** An occurrence is resolved once it is completed or marked not done. */
+const isResolved = (occ) => Boolean(occ?.completedAt || occ?.missedAt);
+
+function lastResolvedDate(progress) {
   let last = null;
   for (const [date, occ] of Object.entries(progress ?? {})) {
-    if (occ?.completedAt && (!last || date > last)) last = date;
+    if (isResolved(occ) && (!last || date > last)) last = date;
   }
   return last;
 }
 
-/** Latest occurrence date whose completion happened on `today` (local time), or null. */
-export function completedOn(progress, today) {
+/** Latest occurrence date whose `field` timestamp falls on `today` (local time), or null. */
+function markedOn(progress, today, field) {
   let found = null;
   for (const [date, occ] of Object.entries(progress ?? {})) {
-    if (occ?.completedAt && isoToLocalKey(occ.completedAt) === today && (!found || date > found)) found = date;
+    if (occ?.[field] && isoToLocalKey(occ[field]) === today && (!found || date > found)) found = date;
   }
   return found;
+}
+
+/** Latest occurrence date whose completion happened on `today` (local time), or null. */
+export function completedOn(progress, today) {
+  return markedOn(progress, today, 'completedAt');
+}
+
+/** Latest occurrence date marked not done on `today` (local time), or null. */
+export function missedOn(progress, today) {
+  return markedOn(progress, today, 'missedAt');
 }
 
 const byName = (a, b) => a.task.name.localeCompare(b.task.name, undefined, { sensitivity: 'base' });
@@ -169,20 +202,26 @@ const byName = (a, b) => a.task.name.localeCompare(b.task.name, undefined, { sen
 /**
  * Splits active tasks into Home's sections. Each item is { task, date } where
  * `date` is the occurrence the card acts on. A task appears at most once.
+ * `missed` holds the tasks marked not done today.
  */
 export function homeSections(state, today) {
   const todo = [];
   const pending = [];
   const done = [];
+  const missed = [];
   for (const task of state.tasks ?? []) {
     if (task.active !== true) continue;
     const progress = state.progress?.[task.id] ?? {};
 
     const doneDate = completedOn(progress, today);
+    const missedDate = missedOn(progress, today);
     if (doneDate) {
       done.push({ task, date: doneDate });
     } else if (isDue(task, today)) {
-      todo.push({ task, date: today });
+      // Due today: only today's own occurrence decides between To do and Not done.
+      (progress[today]?.missedAt ? missed : todo).push({ task, date: today });
+    } else if (missedDate) {
+      missed.push({ task, date: missedDate });
     } else {
       const since = pendingDate(task, progress, today);
       if (since) pending.push({ task, date: since });
@@ -191,7 +230,8 @@ export function homeSections(state, today) {
   todo.sort(byName);
   pending.sort(byName);
   done.sort(byName);
-  return { todo, pending, done };
+  missed.sort(byName);
+  return { todo, pending, done, missed };
 }
 
 /** Checked/total for an occurrence, counting only items still on the task. */

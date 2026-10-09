@@ -2,11 +2,12 @@
 
 An offline task manager for your phone, with a dark theme. You install it to the home screen of an Android phone or iPhone from a small server on your PC. It does not go through an app store, and it has no account, no cloud and no sync. All data stays on the phone. To move data between devices, export a backup file and import it on the other device.
 
-- **Home**: today's tasks in three sections: **To do**, **Pending** (missed and not done yet) and **Done**. Use **+ Quick task** for one-off tasks. Below them, write today's **Journal** entry.
+- **Home**: your habit **Characters** at the top, then today's tasks in three sections: **To do**, **Pending** (missed and not done yet) and **Done**. Mark a task **Not done** when you know you'll skip it; it moves to a **Not done** section and counts against your characters right away. Use **+ Quick task** for one-off tasks. Below them, write today's **Journal** entry.
 - **Tasks**: recurring tasks. Each one can repeat once, daily, weekly, monthly or yearly, every N days, weeks, months or years. Tasks can have notes and a checklist.
 - **Checklists**: reusable lists for double-checking you haven't missed anything, such as a packing list for a trip. Tick items off, then **Uncheck all** to use the list again. They have no dates and never appear on Home.
 - **Journal**: a few lines a day, up to 3 feelings (from 32) and your energy level (0–100% in 8 steps). Browse a month at a time on a calendar, jump to any month or year, and fill in a day you missed. Text saves as you type.
-- **Settings**: back up (tasks, progress, checklists and journal), restore, check for updates, and delete all data.
+- **Habits**: create characters (kid, woman, man, cat, dog or bird) and attach your tasks to them. Each completed task earns the character XP, and each missed one costs XP, so it levels up (or down) with your habits. Choose how much XP each level needs, and a status for each result (💪 Strong when you go to the gym, 🥀 Weak when you skip it — 64 to pick from). A character is happy, normal or sad depending on how many tasks you missed in the last day, week, month or year.
+- **Settings**: back up (tasks, progress, checklists, journal and characters), restore, check for updates, and delete all data.
 
 ## Requirements
 
@@ -131,7 +132,7 @@ The project has no build step and no dependencies. It is plain HTML, CSS and Jav
 
 ```
 server.js               zero-dependency static server (HTTP + optional HTTPS)
-tests/                  node --test (scheduling rules, storage, import/export)
+tests/                  node --test (scheduling rules, habits, storage, import/export)
 public/
   index.html, manifest.webmanifest, sw.js, css/app.css, img/
   js/app.js             boot, router, tab bar, service worker updates
@@ -141,8 +142,11 @@ public/
   js/io.js              backup export / import / share
   js/icons.js           inline SVG icons (Lucide, ISC license)
   js/moods.js           journal emotions (emoji) and energy levels
+  js/statuses.js        character avatars and statuses (emoji)
+  js/habits.js          pure habit rules (XP, levels, mood, statuses)
   js/ui.js              DOM helpers, sheets, dialogs, toasts
-  js/screens/           home, tasks, task-form, checklists, checklist-view, checklist-form, journal, journal-day, settings
+  js/screens/           home, tasks, task-form, checklists, checklist-view, checklist-form, journal, journal-day,
+                        habits, character-view, character-form, habit-form, settings
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the full spec and project rules.

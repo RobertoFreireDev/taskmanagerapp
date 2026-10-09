@@ -3,13 +3,17 @@
  * until Save. Editing the recurrence never touches past progress.
  */
 
-import { getTask, createTask, updateTask, deleteTask, newId, NAME_MAX, MAX_DAY_IN_MONTH } from '../store.js';
+import {
+  getTask, createTask, updateTask, deleteTask, charactersUsingTask, newId, NAME_MAX, MAX_DAY_IN_MONTH,
+} from '../store.js';
 import { RECURRENCE_TYPES, nextOccurrences } from '../schedule.js';
 import {
   WEEK_STARTS_ON, WEEKDAY_SHORT, WEEKDAY_LONG, MONTH_LONG, MONTH_SHORT,
   todayKey, isValidKey, parseKey, weekday, daysBetween, formatWithWeekday,
 } from '../dates.js';
-import { h, icon, uid, openSheet, confirmDialog, toast, listEditor } from '../ui.js';
+import {
+  h, icon, uid, openSheet, confirmDialog, toast, listEditor, fieldError, showError, clearError,
+} from '../ui.js';
 import { DEFAULT_ICON, renderIcon, iconLabel, iconPicker } from '../icons.js';
 
 const TYPE_LABELS = { once: 'Once', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' };
@@ -435,9 +439,13 @@ export function mount({ header, main, params, ctx }) {
   }
 
   async function remove() {
+    const linked = charactersUsingTask(existing.id).length;
     const ok = await confirmDialog({
       title: 'Delete task?',
-      message: `“${existing.name}” and all of its progress will be deleted. This cannot be undone.`,
+      message: [
+        `“${existing.name}” and all of its progress will be deleted. This cannot be undone.`,
+        linked ? `It is also removed from ${linked === 1 ? '1 character' : `${linked} characters`}, along with the XP it gave.` : null,
+      ],
       confirmLabel: 'Delete',
       danger: true,
     });
@@ -458,22 +466,6 @@ export function mount({ header, main, params, ctx }) {
       renderPreview();
     },
   };
-}
-
-function fieldError() {
-  return h('p', { id: uid('error'), class: 'field-error', hidden: true });
-}
-
-function showError(input, el, message) {
-  el.textContent = message;
-  el.hidden = false;
-  input.setAttribute('aria-invalid', 'true');
-  return input;
-}
-
-function clearError(input, el) {
-  el.hidden = true;
-  input.removeAttribute('aria-invalid');
 }
 
 function renderNotFound(header, main) {

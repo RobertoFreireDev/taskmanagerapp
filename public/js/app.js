@@ -13,9 +13,14 @@ import * as checklistViewScreen from './screens/checklist-view.js';
 import * as checklistFormScreen from './screens/checklist-form.js';
 import * as journalScreen from './screens/journal.js';
 import * as journalDayScreen from './screens/journal-day.js';
+import * as habitsScreen from './screens/habits.js';
+import * as characterViewScreen from './screens/character-view.js';
+import * as characterFormScreen from './screens/character-form.js';
+import * as habitFormScreen from './screens/habit-form.js';
 import * as settingsScreen from './screens/settings.js';
 
 const idParam = (m) => ({ id: decodeURIComponent(m[1]) });
+const habitParams = (m) => ({ id: decodeURIComponent(m[1]), habitId: decodeURIComponent(m[2]) });
 
 const ROUTES = [
   { re: /^#\/home$/, screen: homeScreen, tab: 'home' },
@@ -29,6 +34,12 @@ const ROUTES = [
   { re: /^#\/journal$/, screen: journalScreen, tab: 'journal' },
   { re: /^#\/journal\/(\d{4}-\d{2})$/, screen: journalScreen, tab: 'journal', params: (m) => ({ month: m[1] }) },
   { re: /^#\/journal\/(\d{4}-\d{2}-\d{2})$/, screen: journalDayScreen, tab: 'journal', params: (m) => ({ date: m[1] }) },
+  { re: /^#\/habits$/, screen: habitsScreen, tab: 'habits' },
+  { re: /^#\/habits\/new$/, screen: characterFormScreen, tab: 'habits' },
+  { re: /^#\/habits\/([^/]+)\/edit$/, screen: characterFormScreen, tab: 'habits', params: idParam },
+  { re: /^#\/habits\/([^/]+)\/tasks\/new$/, screen: habitFormScreen, tab: 'habits', params: idParam },
+  { re: /^#\/habits\/([^/]+)\/tasks\/([^/]+)$/, screen: habitFormScreen, tab: 'habits', params: habitParams },
+  { re: /^#\/habits\/([^/]+)$/, screen: characterViewScreen, tab: 'habits', params: idParam },
   { re: /^#\/settings$/, screen: settingsScreen, tab: 'settings' },
 ];
 const DEFAULT_HASH = '#/home';
@@ -38,6 +49,7 @@ const TABS = [
   { key: 'tasks', label: 'Tasks', href: '#/tasks', icon: 'list' },
   { key: 'checklists', label: 'Checklists', href: '#/checklists', icon: 'clipboard' },
   { key: 'journal', label: 'Journal', href: '#/journal', icon: 'journal' },
+  { key: 'habits', label: 'Habits', href: '#/habits', icon: 'trophy' },
   { key: 'settings', label: 'Settings', href: '#/settings', icon: 'settings' },
 ];
 

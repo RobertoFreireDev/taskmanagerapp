@@ -7,11 +7,15 @@ import { isValidKey, isoToLocalKey } from './dates.js';
 import { RECURRENCE_TYPES } from './schedule.js';
 import { DEFAULT_ICON, isIconKey } from './icons.js';
 import { MAX_EMOTIONS, isEmotionKey, isEnergyLevel } from './moods.js';
+import { DEFAULT_AVATAR, isAvatarKey, isStatusKey } from './statuses.js';
+import {
+  MOOD_PERIODS, DEFAULT_LEVELING, DEFAULT_MOOD, DEFAULT_HABIT, HABIT_XP_MAX, LEVEL_XP_MAX, MISSED_MAX,
+} from './habits.js';
 
 export const STORAGE_KEY = 'taskmanager.state';
 export const LAST_EXPORT_KEY = 'taskmanager.lastExport';
 export const CORRUPT_KEY = 'taskmanager.state.corrupt';
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const NAME_MAX = 80;
 export const TEXT_MAX = 2000;
 export const JOURNAL_TEXT_MAX = 20000;
@@ -34,10 +38,12 @@ const MIGRATIONS = {
   1: (data) => ({ ...data, schemaVersion: 2, checklists: [] }),
   // 2 → 3: daily journal.
   2: (data) => ({ ...data, schemaVersion: 3, journal: {} }),
+  // 3 → 4: habit characters.
+  3: (data) => ({ ...data, schemaVersion: 4, characters: [] }),
 };
 
 export function emptyState() {
-  return { schemaVersion: SCHEMA_VERSION, tasks: [], progress: {}, checklists: [], journal: {} };
+  return { schemaVersion: SCHEMA_VERSION, tasks: [], progress: {}, checklists: [], journal: {}, characters: [] };
 }
 
 /** Brings raw parsed data up to the current schema and normalizes it. Throws DataError. */
@@ -92,7 +98,89 @@ function normalizeState(data) {
   });
 
   const journal = normalizeJournal(data.journal ?? {});
-  return { schemaVersion: SCHEMA_VERSION, tasks, progress, checklists, journal };
+
+  const rawCharacters = data.characters ?? [];
+  if (!Array.isArray(rawCharacters)) throw new DataError('"characters" must be a list.');
+  const characterIds = new Set();
+  const characters = rawCharacters.map((raw, i) => {
+    const character = normalizeCharacter(raw, i, ids);
+    if (characterIds.has(character.id)) throw new DataError(`Two characters share the id "${character.id}".`);
+    characterIds.add(character.id);
+    return character;
+  });
+
+  return { schemaVersion: SCHEMA_VERSION, tasks, progress, checklists, journal, characters };
+}
+
+/** A habit character. Habits for unknown tasks, or for a task already attached, are dropped. */
+function normalizeCharacter(c, i, taskIds) {
+  const where = `Character ${i + 1}`;
+  if (!isPlainObject(c)) throw new DataError(`${where} is not an object.`);
+  const id = cleanId(c.id);
+  if (!id) throw new DataError(`${where} has no id.`);
+  const name = cleanText(c.name, NAME_MAX);
+  if (!name) throw new DataError(`${where} has no name.`);
+  const createdAt = isTimestamp(c.createdAt) ? c.createdAt : new Date().toISOString();
+
+  const leveling = isPlainObject(c.leveling) ? c.leveling : {};
+  const mood = isPlainObject(c.mood) ? c.mood : {};
+  const happyMax = clampInt(mood.happyMax, 0, MISSED_MAX - 1, DEFAULT_MOOD.happyMax);
+  const sadMin = clampInt(mood.sadMin, 1, MISSED_MAX, DEFAULT_MOOD.sadMin);
+
+  const habits = [];
+  const habitIds = new Set();
+  const linked = new Set();
+  for (const raw of Array.isArray(c.habits) ? c.habits : []) {
+    const habit = normalizeHabit(raw, `"${name}"`);
+    if (!habit || !taskIds.has(habit.taskId) || linked.has(habit.taskId)) continue;
+    if (habitIds.has(habit.id)) habit.id = newId();
+    habitIds.add(habit.id);
+    linked.add(habit.taskId);
+    habits.push(habit);
+  }
+
+  return {
+    id,
+    avatar: isAvatarKey(c.avatar) ? c.avatar : DEFAULT_AVATAR,
+    name,
+    leveling: {
+      base: clampInt(leveling.base, 1, LEVEL_XP_MAX, DEFAULT_LEVELING.base),
+      step: clampInt(leveling.step, 0, LEVEL_XP_MAX, DEFAULT_LEVELING.step),
+    },
+    mood: {
+      period: Object.hasOwn(MOOD_PERIODS, mood.period) ? mood.period : DEFAULT_MOOD.period,
+      happyMax,
+      sadMin: sadMin > happyMax ? sadMin : happyMax + 1,
+    },
+    habits,
+    createdAt,
+    updatedAt: isTimestamp(c.updatedAt) ? c.updatedAt : createdAt,
+  };
+}
+
+/** A task attached to a character, with what completing or missing it does. */
+function normalizeHabit(h, where) {
+  if (!isPlainObject(h)) return null;
+  const taskId = cleanId(h.taskId);
+  if (!taskId) return null;
+  if (!isValidKey(h.since)) throw new DataError(`Character ${where} has a habit with an invalid date.`);
+  const outcome = (o, fallback) => ({
+    xp: clampInt(isPlainObject(o) ? o.xp : undefined, 0, HABIT_XP_MAX, fallback.xp),
+    status: isPlainObject(o) && isStatusKey(o.status) ? o.status : null,
+  });
+  return {
+    id: typeof h.id === 'string' && h.id ? h.id : newId(),
+    taskId,
+    since: h.since,
+    done: outcome(h.done, DEFAULT_HABIT.done),
+    missed: outcome(h.missed, DEFAULT_HABIT.missed),
+  };
+}
+
+/** A whole number clamped to [min, max]; anything that isn't a number becomes `fallback`. */
+function clampInt(value, min, max, fallback) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(value)));
 }
 
 /** Journal entries keyed by local date. Entries that record nothing are dropped. */
@@ -217,8 +305,10 @@ function normalizeOccurrence(occ) {
     for (const [id, checked] of Object.entries(occ.checklist)) if (checked === true) checklist[id] = true;
   }
   const completedAt = isTimestamp(occ.completedAt) ? occ.completedAt : null;
-  if (!completedAt && !Object.keys(checklist).length) return null; // nothing recorded
-  return { checklist, completedAt };
+  // Done and Not done are exclusive; a completion wins.
+  const missedAt = !completedAt && isTimestamp(occ.missedAt) ? occ.missedAt : null;
+  if (!completedAt && !missedAt && !Object.keys(checklist).length) return null; // nothing recorded
+  return { checklist, completedAt, missedAt };
 }
 
 function uniqueInts(list, min, max) {
@@ -353,10 +443,15 @@ export function updateTask(id, fields) {
   return task;
 }
 
-/** Removes a task and all of its progress. */
+/** Removes a task, all of its progress, and the habits it backs. */
 export function deleteTask(id) {
   state.tasks = state.tasks.filter((t) => t.id !== id);
   delete state.progress[id];
+  for (const character of state.characters) {
+    if (character.habits.some((habit) => habit.taskId === id)) {
+      character.habits = character.habits.filter((habit) => habit.taskId !== id);
+    }
+  }
   commit();
 }
 
@@ -370,14 +465,14 @@ export function setTaskActive(id, active) {
 
 function occurrence(taskId, date) {
   const byDate = (state.progress[taskId] ??= {});
-  return (byDate[date] ??= { checklist: {}, completedAt: null });
+  return (byDate[date] ??= { checklist: {}, completedAt: null, missedAt: null });
 }
 
 /** Drops an occurrence once it records nothing, so progress stays lean. */
 function prune(taskId, date) {
   const byDate = state.progress[taskId];
   const occ = byDate?.[date];
-  if (occ && !occ.completedAt && !Object.keys(occ.checklist).length) delete byDate[date];
+  if (occ && !occ.completedAt && !occ.missedAt && !Object.keys(occ.checklist).length) delete byDate[date];
   if (byDate && !Object.keys(byDate).length) delete state.progress[taskId];
 }
 
@@ -392,14 +487,27 @@ export function setChecklistItem(taskId, date, itemId, checked) {
 
 export function completeOccurrence(taskId, date) {
   if (!getTask(taskId)) return;
-  occurrence(taskId, date).completedAt = new Date().toISOString();
+  const occ = occurrence(taskId, date);
+  occ.completedAt = new Date().toISOString();
+  occ.missedAt = null;
   commit();
 }
 
+/** Records an occurrence as not done now, instead of waiting for its day to end. */
+export function missOccurrence(taskId, date) {
+  if (!getTask(taskId)) return;
+  const occ = occurrence(taskId, date);
+  occ.missedAt = new Date().toISOString();
+  occ.completedAt = null;
+  commit();
+}
+
+/** Clears Done or Not done from an occurrence. Checklist ticks stay. */
 export function undoOccurrence(taskId, date) {
   const occ = state.progress[taskId]?.[date];
   if (!occ) return;
   occ.completedAt = null;
+  occ.missedAt = null;
   prune(taskId, date);
   commit();
 }
@@ -478,13 +586,85 @@ export function deleteJournalEntry(date) {
   commit();
 }
 
+// ---------------------------------------------------------------------------
+// Habit characters: each one levels up from the tasks attached to it.
+
+export function getCharacter(id) {
+  return state.characters.find((c) => c.id === id) ?? null;
+}
+
+/** Characters with a habit backed by this task. */
+export function charactersUsingTask(taskId) {
+  return state.characters.filter((c) => c.habits.some((habit) => habit.taskId === taskId));
+}
+
+const taskIds = () => new Set(state.tasks.map((t) => t.id));
+
+/** Adds a character built from form fields (avatar, name, leveling, mood). Returns the stored character. */
+export function createCharacter(fields) {
+  const now = new Date().toISOString();
+  const character = normalizeCharacter(
+    { ...fields, habits: [], id: newId(), createdAt: now, updatedAt: now }, state.characters.length, taskIds(),
+  );
+  state.characters.push(character);
+  commit();
+  return character;
+}
+
+/** Replaces a character's avatar, name, leveling and mood. Its habits are kept. */
+export function updateCharacter(id, fields) {
+  const index = state.characters.findIndex((c) => c.id === id);
+  if (index < 0) return null;
+  const old = state.characters[index];
+  const character = normalizeCharacter(
+    { ...old, ...fields, id, habits: old.habits, createdAt: old.createdAt, updatedAt: new Date().toISOString() }, index, taskIds(),
+  );
+  state.characters[index] = character;
+  commit();
+  return character;
+}
+
+export function deleteCharacter(id) {
+  state.characters = state.characters.filter((c) => c.id !== id);
+  commit();
+}
+
+/**
+ * Attaches a task to a character (habitId null) or replaces one of its
+ * habits, from { taskId, since, done, missed }. Returns the stored habit, or
+ * null when the character, habit or task is unknown, or when another habit
+ * of this character already uses the task.
+ */
+export function saveHabit(characterId, habitId, fields) {
+  const character = getCharacter(characterId);
+  if (!character || !getTask(fields.taskId)) return null;
+  if (habitId != null && !character.habits.some((habit) => habit.id === habitId)) return null;
+  if (character.habits.some((habit) => habit.taskId === fields.taskId && habit.id !== habitId)) return null;
+  const [habit] = normalizeCharacter({ ...character, habits: [{ ...fields, id: habitId ?? newId() }] }, 0, taskIds()).habits;
+  if (!habit) return null;
+  character.habits = habitId == null
+    ? [...character.habits, habit]
+    : character.habits.map((old) => (old.id === habitId ? habit : old));
+  character.updatedAt = new Date().toISOString();
+  commit();
+  return habit;
+}
+
+export function deleteHabit(characterId, habitId) {
+  const character = getCharacter(characterId);
+  if (!character?.habits.some((habit) => habit.id === habitId)) return;
+  character.habits = character.habits.filter((habit) => habit.id !== habitId);
+  character.updatedAt = new Date().toISOString();
+  commit();
+}
+
 /** Replaces everything with already-migrated state (import). */
 export function replaceState(next) {
   state = next;
   commit();
 }
 
-/** Wipes all tasks, progress, checklists, journal entries and the last-export marker. */
+/** Wipes all tasks, progress, checklists, journal entries, characters and the last-export marker. */
 export function clearAll() {
   state = emptyState();
   try {

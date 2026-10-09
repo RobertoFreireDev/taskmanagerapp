@@ -1,21 +1,23 @@
 /*
- * Home (#/home): today's TO DO, Pending and Done sections, quick tasks, and
- * today's journal entry.
+ * Home (#/home): habit characters, today's TO DO, Pending, Done and Not done
+ * sections, quick tasks, and today's journal entry.
  */
 
 import {
-  getState, subscribe, createTask, deleteTask, completeOccurrence, undoOccurrence, setChecklistItem, NAME_MAX,
+  getState, subscribe, createTask, deleteTask, completeOccurrence, missOccurrence, undoOccurrence, setChecklistItem, NAME_MAX,
 } from '../store.js';
 import { homeSections, checklistProgress } from '../schedule.js';
 import { todayKey, formatLong, formatShort } from '../dates.js';
 import { h, icon, uid, openSheet, confirmDialog, toast, listEditor, preserveFocus } from '../ui.js';
 import { renderIcon } from '../icons.js';
 import { journalEditor } from './journal-day.js';
+import { characterList } from './habits.js';
 
 const SECTIONS = [
   { key: 'todo', title: 'To do', empty: 'Nothing due today.' },
   { key: 'pending', title: 'Pending', empty: 'Nothing pending.' },
   { key: 'done', title: 'Done', empty: 'Nothing completed yet today.' },
+  { key: 'missed', title: 'Not done', empty: null }, // shown only when something was marked
 ];
 
 // UI state that survives re-renders and navigation within a session.
@@ -43,7 +45,20 @@ export function mount({ header, main }) {
     const state = getState();
     const sections = homeSections(state, today);
     preserveFocus(sectionsEl, () => {
-      sectionsEl.replaceChildren(...SECTIONS.map((def) => renderSection(def, sections[def.key], state)));
+      sectionsEl.replaceChildren(
+        ...[renderCharacters(state), ...SECTIONS.map((def) => renderSection(def, sections[def.key], state))].filter(Boolean),
+      );
+    });
+  }
+
+  /** Habit characters above To do, so completing a task shows its XP at once. Hidden when there are none. */
+  function renderCharacters(state) {
+    if (!state.characters.length) return null;
+    return collapsible({
+      key: 'characters',
+      title: 'Characters',
+      count: state.characters.length,
+      content: characterList(state, today),
     });
   }
 
@@ -72,6 +87,7 @@ export function mount({ header, main }) {
   }
 
   function renderSection(def, items, state) {
+    if (!items.length && def.empty == null) return null;
     return collapsible({
       key: def.key,
       title: def.title,
@@ -103,6 +119,7 @@ export function mount({ header, main }) {
 
     const meta = [];
     if (section === 'pending') meta.push(h('span', { class: 'meta-since' }, `since ${formatShort(date, today)}`));
+    if (section === 'missed' && date !== today) meta.push(h('span', { class: 'meta-missed' }, `due ${formatShort(date, today)}`));
     if (task.kind === 'quick') meta.push(h('span', { class: 'badge' }, 'Quick'));
     if (progress.total) {
       meta.push(
@@ -126,7 +143,8 @@ export function mount({ header, main }) {
       task.notes.length ? h('div', { class: 'card-notes' }, task.notes.map((note) => h('p', {}, note))) : null,
       progress.total ? h('ul', { class: 'checklist' }, task.checklist.map((item) => checklistRow(task, date, item, occurrence))) : null,
       !task.notes.length && !progress.total ? h('p', { class: 'muted' }, 'No notes or checklist.') : null,
-      h('div', { class: 'card-actions' }, actions(task, date, section, focusKey)),
+      h('div', { class: `card-actions ${task.kind === 'regular' && (section === 'todo' || section === 'pending') ? 'has-outcomes' : ''}` },
+        actions(task, date, section, focusKey)),
     );
 
     head.addEventListener('click', () => {
@@ -164,12 +182,21 @@ export function mount({ header, main }) {
     if (task.kind === 'quick') {
       return h('button', { type: 'button', class: 'btn btn-danger', dataset: { focusKey }, onclick: () => removeQuickTask(task) }, icon('trash'), 'Delete');
     }
-    const edit = h('a', { class: 'btn btn-ghost', href: `#/tasks/${encodeURIComponent(task.id)}` }, icon('edit'), 'Edit');
-    if (section === 'done') {
+    const edit = h('a', { class: 'icon-btn card-edit', href: `#/tasks/${encodeURIComponent(task.id)}`, 'aria-label': `Edit “${task.name}”` }, icon('edit'));
+    if (section === 'done' || section === 'missed') {
       return [edit, h('button', { type: 'button', class: 'btn', dataset: { focusKey }, onclick: () => undoOccurrence(task.id, date) }, icon('undo'), 'Undo')];
     }
     return [
       edit,
+      h('button', {
+        type: 'button',
+        class: 'btn btn-danger',
+        dataset: { focusKey },
+        onclick: () => {
+          missOccurrence(task.id, date);
+          toast(`“${task.name}” not done`, { actionLabel: 'Undo', onAction: () => undoOccurrence(task.id, date) });
+        },
+      }, icon('close'), 'Not done'),
       h('button', {
         type: 'button',
         class: 'btn btn-success',

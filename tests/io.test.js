@@ -50,20 +50,37 @@ function sampleState() {
       '2026-10-07': { text: '', emotions: [], energy: 0, createdAt: ts, updatedAt: ts },
       '2026-09-30': { text: 'Only words.', emotions: [], energy: null, createdAt: ts, updatedAt: ts },
     },
+    characters: [
+      {
+        id: 'rex', avatar: 'dog', name: 'Rex',
+        leveling: { base: 100, step: 50 }, mood: { period: 'week', happyMax: 0, sadMin: 3 },
+        habits: [
+          { id: 'h1', taskId: 'walk', since: '2026-09-01', done: { xp: 10, status: 'strong' }, missed: { xp: 5, status: 'weak' } },
+          { id: 'h2', taskId: 'rent', since: '2026-10-01', done: { xp: 50, status: 'rich' }, missed: { xp: 20, status: null } },
+        ],
+        createdAt: ts, updatedAt: ts,
+      },
+      {
+        id: 'mia', avatar: 'cat', name: 'Mia',
+        leveling: { base: 10, step: 0 }, mood: { period: 'day', happyMax: 1, sadMin: 2 },
+        habits: [], createdAt: ts, updatedAt: ts,
+      },
+    ],
   });
 }
 
 describe('export → import', () => {
-  test('round-trips the exact same state, quick tasks, checklists and journal included', () => {
+  test('round-trips the exact same state, quick tasks, checklists, journal and characters included', () => {
     const state = sampleState();
     const file = JSON.stringify(buildExport(state, new Date(ts)), null, 2);
     const { state: restored, summary } = parseImport(file);
     assert.deepEqual(restored, state);
-    assert.deepEqual(summary, { tasks: 4, checklists: 2, progressRecords: 3, journalEntries: 3, exportedAt: ts });
+    assert.deepEqual(summary, { tasks: 4, checklists: 2, progressRecords: 3, journalEntries: 3, characters: 2, exportedAt: ts });
     assert.ok(restored.tasks.some((t) => t.kind === 'quick'));
     assert.equal(restored.checklists[0].items[0].checked, true);
     assert.deepEqual(restored.journal['2026-10-08'].emotions, ['tired', 'grateful']);
     assert.equal(restored.journal['2026-10-07'].energy, 0);
+    assert.deepEqual(restored.characters[0].habits.map((h) => h.taskId), ['walk', 'rent']);
   });
 
   test('export document shape', () => {
@@ -100,6 +117,17 @@ describe('export → import', () => {
     assert.deepEqual(state.journal, {});
     assert.equal(summary.journalEntries, 0);
     assert.deepEqual(state.checklists, sampleState().checklists);
+  });
+
+  test('a schema 3 backup (before characters) still imports, with no characters', () => {
+    const doc = JSON.parse(JSON.stringify(buildExport(sampleState(), new Date(ts))));
+    doc.schemaVersion = 3;
+    delete doc.characters;
+    const { state, summary } = parseImport(JSON.stringify(doc));
+    assert.equal(state.schemaVersion, SCHEMA_VERSION);
+    assert.deepEqual(state.characters, []);
+    assert.equal(summary.characters, 0);
+    assert.deepEqual(state.journal, sampleState().journal);
   });
 });
 
@@ -222,5 +250,61 @@ describe('import validation', () => {
     assert.equal(journal['2026-10-08'].text, 'Trimmed');
     assert.equal(journal['2026-10-06'], undefined);
     assert.equal(journal['2026-10-05'], undefined);
+  });
+
+  test('keeps Not done marks; a completion wins over one; bad marks are dropped', () => {
+    const doc = base();
+    doc.progress.walk['2026-10-01'] = { checklist: {}, completedAt: null, missedAt: ts };
+    doc.progress.walk['2026-10-02'] = { checklist: {}, completedAt: ts, missedAt: ts };
+    doc.progress.walk['2026-10-03'] = { checklist: {}, missedAt: 'yesterday' }; // records nothing: dropped
+    const { walk } = parseImport(JSON.stringify(doc)).state.progress;
+    assert.deepEqual(walk['2026-10-01'], { checklist: {}, completedAt: null, missedAt: ts });
+    assert.deepEqual(walk['2026-10-02'], { checklist: {}, completedAt: ts, missedAt: null });
+    assert.equal(walk['2026-10-03'], undefined);
+    assert.equal(walk['2026-10-05'].missedAt, null); // older files have no missedAt
+  });
+
+  test('rejects bad characters', () => {
+    rejects({ ...base(), characters: {} }, /"characters" must be a list/);
+    const noId = base();
+    delete noId.characters[0].id;
+    rejects(noId, /Character 1 has no id/);
+    const noName = base();
+    noName.characters[1].name = '  ';
+    rejects(noName, /Character 2 has no name/);
+    const dup = base();
+    dup.characters[1].id = dup.characters[0].id;
+    rejects(dup, /Two characters share the id/);
+    const badSince = base();
+    badSince.characters[0].habits[0].since = '2026-9-1';
+    rejects(badSince, /habit with an invalid date/);
+  });
+
+  test('normalizes characters and their habits', () => {
+    const doc = base();
+    const [rex, mia] = doc.characters;
+    rex.avatar = 'dragon';
+    rex.leveling = { base: 0, step: -5 };
+    rex.mood = { period: 'decade', happyMax: 4, sadMin: 2 };
+    rex.habits[0].done.status = 'unicorn';
+    rex.habits[0].missed.xp = 1e9;
+    rex.habits.push(
+      { id: 'h3', taskId: 'ghost', since: '2026-10-01', done: { xp: 1 }, missed: { xp: 1 } }, // unknown task: dropped
+      { id: 'h4', taskId: 'walk', since: '2026-10-01', done: { xp: 1 }, missed: { xp: 1 } }, // task already attached: dropped
+      'not a habit',
+    );
+    mia.leveling = 'steep';
+    mia.mood = null;
+    delete mia.habits;
+    const { characters } = parseImport(JSON.stringify(doc)).state;
+    assert.equal(characters[0].avatar, 'kid');
+    assert.deepEqual(characters[0].leveling, { base: 1, step: 0 });
+    assert.deepEqual(characters[0].mood, { period: 'week', happyMax: 4, sadMin: 5 });
+    assert.deepEqual(characters[0].habits.map((h) => h.id), ['h1', 'h2']);
+    assert.deepEqual(characters[0].habits[0].done, { xp: 10, status: null });
+    assert.deepEqual(characters[0].habits[0].missed, { xp: 9999, status: 'weak' });
+    assert.deepEqual(characters[1].leveling, { base: 100, step: 50 });
+    assert.deepEqual(characters[1].mood, { period: 'week', happyMax: 0, sadMin: 3 });
+    assert.deepEqual(characters[1].habits, []);
   });
 });

@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  isDue, homeSections, pendingDate, nextOccurrences, describeRecurrence, checklistProgress, LOOKBACK_DAYS,
+  isDue, homeSections, pendingDate, nextOccurrences, dueDatesBetween, describeRecurrence, checklistProgress, LOOKBACK_DAYS,
 } from '../public/js/schedule.js';
 import {
   addDays, daysBetween, weekday, weekOf, weeksBetween, monthsBetween, isValidKey, localDateKey,
@@ -42,11 +42,12 @@ function at(key, hour = 12, minute = 0) {
 }
 
 const done = (key, hour) => ({ checklist: {}, completedAt: at(key, hour) });
+const notDone = (key, hour) => ({ checklist: {}, completedAt: null, missedAt: at(key, hour) });
 
 function sections(tasks, progress = {}, today = TODAY) {
   const s = homeSections({ schemaVersion: 1, tasks, progress }, today);
   const pick = (items) => items.map(({ task, date }) => [task.id, date]);
-  return { todo: pick(s.todo), pending: pick(s.pending), done: pick(s.done) };
+  return { todo: pick(s.todo), pending: pick(s.pending), done: pick(s.done), missed: pick(s.missed) };
 }
 
 // ---------------------------------------------------------------------------
@@ -290,7 +291,7 @@ describe('isDue: future start date', () => {
 
   test('a future task is not on Home at all', () => {
     const t = makeTask({ type: 'daily', startDate: '2026-10-09' });
-    assert.deepEqual(sections([t]), { todo: [], pending: [], done: [] });
+    assert.deepEqual(sections([t]), { todo: [], pending: [], done: [], missed: [] });
   });
 });
 
@@ -304,12 +305,12 @@ describe('homeSections', () => {
 
   test('due today with a missed earlier occurrence shows in TO DO only (missed ones are skipped)', () => {
     const t = makeTask({ type: 'daily', startDate: '2026-09-01' });
-    assert.deepEqual(sections([t]), { todo: [['t1', TODAY]], pending: [], done: [] });
+    assert.deepEqual(sections([t]), { todo: [['t1', TODAY]], pending: [], done: [], missed: [] });
   });
 
   test('completed today moves to Done; undo brings it back to TO DO', () => {
     const t = makeTask({ type: 'daily', startDate: '2026-10-01' });
-    assert.deepEqual(sections([t], { t1: { [TODAY]: done(TODAY) } }), { todo: [], pending: [], done: [['t1', TODAY]] });
+    assert.deepEqual(sections([t], { t1: { [TODAY]: done(TODAY) } }), { todo: [], pending: [], done: [['t1', TODAY]], missed: [] });
     assert.deepEqual(sections([t], { t1: { [TODAY]: { checklist: {}, completedAt: null } } }).todo, [['t1', TODAY]]);
   });
 
@@ -323,7 +324,7 @@ describe('homeSections', () => {
 
   test('pending: most recent missed due date, with "since" date', () => {
     const t = makeTask({ type: 'weekly', weekdays: [1], startDate: '2026-09-07' }); // Mondays
-    assert.deepEqual(sections([t]), { todo: [], pending: [['t1', '2026-10-05']], done: [] });
+    assert.deepEqual(sections([t]), { todo: [], pending: [['t1', '2026-10-05']], done: [], missed: [] });
   });
 
   test('pending: nothing when the last occurrence was completed', () => {
@@ -366,7 +367,7 @@ describe('homeSections', () => {
 
   test('a once task completed on an earlier day disappears', () => {
     const t = makeTask({ type: 'once', startDate: '2026-10-01' });
-    assert.deepEqual(sections([t], { t1: { '2026-10-01': done('2026-10-03') } }), { todo: [], pending: [], done: [] });
+    assert.deepEqual(sections([t], { t1: { '2026-10-01': done('2026-10-03') } }), { todo: [], pending: [], done: [], missed: [] });
   });
 
   test('a quick task stays in TO DO on its day and moves to Pending after', () => {
@@ -378,9 +379,9 @@ describe('homeSections', () => {
   test('a pending task completed today lands in Done for its occurrence date', () => {
     const t = makeTask({ type: 'weekly', weekdays: [1], startDate: '2026-09-07' });
     const progress = { t1: { '2026-10-05': done(TODAY) } };
-    assert.deepEqual(sections([t], progress), { todo: [], pending: [], done: [['t1', '2026-10-05']] });
+    assert.deepEqual(sections([t], progress), { todo: [], pending: [], done: [['t1', '2026-10-05']], missed: [] });
     // Tomorrow it is neither pending nor done.
-    assert.deepEqual(sections([t], progress, '2026-10-09'), { todo: [], pending: [], done: [] });
+    assert.deepEqual(sections([t], progress, '2026-10-09'), { todo: [], pending: [], done: [], missed: [] });
   });
 
   test('a pending once task completed today lands in Done', () => {
@@ -396,7 +397,7 @@ describe('homeSections', () => {
       makeTask({ type: 'daily', startDate: '2026-10-01' }, { id: 'd', active: false }),
     ];
     const progress = { d: { [TODAY]: done(TODAY) } };
-    assert.deepEqual(sections(tasks, progress), { todo: [], pending: [], done: [] });
+    assert.deepEqual(sections(tasks, progress), { todo: [], pending: [], done: [], missed: [] });
   });
 
   test('each task appears once, sections are sorted by name', () => {
@@ -407,7 +408,37 @@ describe('homeSections', () => {
       makeTask({ type: 'weekly', weekdays: [1], startDate: '2026-09-07' }, { id: 'p', name: 'Pending one' }),
     ];
     const s = sections(tasks, { m: { [TODAY]: done(TODAY) } });
-    assert.deepEqual(s, { todo: [['a', TODAY], ['z', TODAY]], pending: [['p', '2026-10-05']], done: [['m', TODAY]] });
+    assert.deepEqual(s, { todo: [['a', TODAY], ['z', TODAY]], pending: [['p', '2026-10-05']], done: [['m', TODAY]], missed: [] });
+  });
+
+  test('Not done today moves a task from TO DO to Not done, and only for today', () => {
+    const t = makeTask({ type: 'daily', startDate: '2026-10-01' });
+    const progress = { t1: { [TODAY]: notDone(TODAY) } };
+    assert.deepEqual(sections([t], progress), { todo: [], pending: [], done: [], missed: [['t1', TODAY]] });
+    // Tomorrow the new occurrence is due again; the marked day is never pending.
+    assert.deepEqual(sections([t], progress, '2026-10-09'), { todo: [['t1', '2026-10-09']], pending: [], done: [], missed: [] });
+  });
+
+  test('Not done on a pending occurrence dismisses it from Pending', () => {
+    const t = makeTask({ type: 'weekly', weekdays: [1], startDate: '2026-09-07' });
+    const progress = { t1: { '2026-10-05': notDone(TODAY) } };
+    assert.deepEqual(sections([t], progress), { todo: [], pending: [], done: [], missed: [['t1', '2026-10-05']] });
+    assert.deepEqual(sections([t], progress, '2026-10-09'), { todo: [], pending: [], done: [], missed: [] });
+    // Older missed occurrences behind it stay skipped.
+    assert.equal(pendingDate(t, progress.t1, '2026-10-09'), null);
+  });
+
+  test('a once task marked not done leaves Pending for good', () => {
+    const t = makeTask({ type: 'once', startDate: '2026-10-01' });
+    const progress = { t1: { '2026-10-01': notDone('2026-10-03') } };
+    assert.deepEqual(sections([t], progress), { todo: [], pending: [], done: [], missed: [] });
+    assert.equal(pendingDate(t, progress.t1, TODAY), null);
+  });
+
+  test('due today: a pending occurrence dismissed earlier does not hide today', () => {
+    const t = makeTask({ type: 'weekly', weekdays: [1, 4], startDate: '2026-09-07' });
+    // Mon Oct 5 marked not done today; Thu Oct 8 (today) is due and untouched.
+    assert.deepEqual(sections([t], { t1: { '2026-10-05': notDone(TODAY) } }).todo, [['t1', TODAY]]);
   });
 });
 
@@ -444,6 +475,34 @@ describe('nextOccurrences', () => {
   test('agrees with isDue day by day', () => {
     const t = makeTask({ type: 'monthly', interval: 2, monthDays: [5, 31], startDate: '2026-02-10' });
     assert.deepEqual(nextOccurrences(t, '2026-01-01', 8), dueBetween(t, '2026-01-01', '2027-06-30').slice(0, 8));
+  });
+});
+
+describe('dueDatesBetween', () => {
+  test('agrees with isDue for every recurrence type', () => {
+    const tasks = [
+      makeTask({ type: 'daily', interval: 3, startDate: '2026-09-02' }),
+      makeTask({ type: 'weekly', interval: 2, weekdays: [1, 4], startDate: '2026-09-07' }),
+      makeTask({ type: 'weekly', startDate: '2026-09-09' }),
+      makeTask({ type: 'monthly', interval: 2, monthDays: [5, 31], startDate: '2026-02-10' }),
+      makeTask({ type: 'yearly', yearDays: [{ month: 2, day: 29 }, { month: 10, day: 1 }], startDate: '2024-01-01' }),
+    ];
+    for (const t of tasks) {
+      assert.deepEqual(dueDatesBetween(t, '2026-01-15', '2028-03-31'), dueBetween(t, '2026-01-15', '2028-03-31'), t.recurrence.type);
+    }
+  });
+
+  test('a range that starts before the start date begins at the start date', () => {
+    const t = makeTask({ type: 'daily', startDate: '2026-10-06' });
+    assert.deepEqual(dueDatesBetween(t, '2026-10-01', TODAY), ['2026-10-06', '2026-10-07', '2026-10-08']);
+  });
+
+  test('once tasks, empty and inverted ranges', () => {
+    const once = makeTask({ type: 'once', startDate: '2026-10-05' });
+    assert.deepEqual(dueDatesBetween(once, '2026-10-01', TODAY), ['2026-10-05']);
+    assert.deepEqual(dueDatesBetween(once, '2026-10-06', TODAY), []);
+    assert.deepEqual(dueDatesBetween(makeTask({ type: 'daily' }), TODAY, '2026-10-07'), []);
+    assert.deepEqual(dueDatesBetween(makeTask({ type: 'daily' }), 'nope', TODAY), []);
   });
 });
 

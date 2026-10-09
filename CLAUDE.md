@@ -15,7 +15,7 @@ Read this whole file before writing code. The **Hard rules** section is non-nego
 5. **No auth.** Add no accounts, login screens or tokens.
 6. **Must work fully offline** once installed, with the PC server turned off.
 7. **Dates are local calendar dates.** Store them as `"YYYY-MM-DD"` strings. Never use `toISOString()` to build a date key, because it converts to UTC and shifts the day. Use the helpers in `js/dates.js` only.
-8. **Keep the scheduling logic pure.** `js/schedule.js` must not touch the DOM or storage, and it must have unit tests.
+8. **Keep the scheduling and habit logic pure.** `js/schedule.js` and `js/habits.js` must not touch the DOM or storage, and they must have unit tests.
 9. When you change any file in `public/`, **bump `CACHE_VERSION` in `sw.js`**. Otherwise installed phones keep the old version.
 
 ---
@@ -71,8 +71,9 @@ So the answer to "without a certificate?" is **yes on Android, no on iPhone**. S
 ├── certs/                    # gitignored, mkcert output
 ├── tests/
 │   ├── schedule.test.js      # node --test
+│   ├── habits.test.js        # XP, levels, mood, statuses, avatar/status data
 │   ├── io.test.js            # export / import validation
-│   └── store.test.js         # migration, checklist + journal CRUD
+│   └── store.test.js         # migration, checklist + journal + character CRUD
 └── public/
     ├── index.html
     ├── manifest.webmanifest
@@ -86,6 +87,8 @@ So the answer to "without a certificate?" is **yes on Android, no on iPhone**. S
         ├── schedule.js       # pure: isDue, home sections
         ├── icons.js          # 32 inline SVG icons + picker
         ├── moods.js          # pure: 32 journal emotions (emoji) + 8 energy levels
+        ├── statuses.js       # pure: 6 character avatars + 64 statuses (emoji)
+        ├── habits.js         # pure: XP, levels, mood and statuses of characters
         ├── io.js             # export / import / share
         ├── ui.js             # small DOM helpers, sheets, confirm dialog, toasts
         └── screens/
@@ -97,10 +100,14 @@ So the answer to "without a certificate?" is **yes on Android, no on iPhone**. S
             ├── checklist-form.js   # create / edit / delete a checklist
             ├── journal.js          # month calendar + entries list
             ├── journal-day.js      # one day's entry; exports journalEditor() used by Home
+            ├── habits.js           # character list; exports characterCard()/characterList() used by Home
+            ├── character-view.js   # level, XP, mood, statuses and the character's habits
+            ├── character-form.js   # create / edit / delete a character
+            ├── habit-form.js       # attach a task to a character, edit or detach it
             └── settings.js
 ```
 
-Routing uses hashes: `#/home` (default), `#/tasks`, `#/tasks/new`, `#/tasks/:id`, `#/checklists`, `#/checklists/new`, `#/checklists/:id`, `#/checklists/:id/edit`, `#/journal` (current month), `#/journal/YYYY-MM`, `#/journal/YYYY-MM-DD`, `#/settings`. A fixed bottom tab bar holds five tabs: Home, Tasks, Checklists, Journal, Settings.
+Routing uses hashes: `#/home` (default), `#/tasks`, `#/tasks/new`, `#/tasks/:id`, `#/checklists`, `#/checklists/new`, `#/checklists/:id`, `#/checklists/:id/edit`, `#/journal` (current month), `#/journal/YYYY-MM`, `#/journal/YYYY-MM-DD`, `#/habits`, `#/habits/new`, `#/habits/:id`, `#/habits/:id/edit`, `#/habits/:id/tasks/new`, `#/habits/:id/tasks/:habitId`, `#/settings`. A fixed bottom tab bar holds six tabs: Home, Tasks, Checklists, Journal, Habits, Settings.
 
 ---
 
@@ -135,11 +142,12 @@ All state lives in one `localStorage` key, `taskmanager.state`, as JSON. Save af
 
 ```js
 State = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   tasks: Task[],
   progress: { [taskId]: { [occurrenceDate: "YYYY-MM-DD"]: Occurrence } },
   checklists: Checklist[],
-  journal: { [date: "YYYY-MM-DD"]: JournalEntry }
+  journal: { [date: "YYYY-MM-DD"]: JournalEntry },
+  characters: Character[]
 }
 
 Task = {
@@ -166,7 +174,8 @@ Recurrence = {
 
 Occurrence = {
   checklist: { [itemId]: boolean },  // progress is per occurrence; resets for each new occurrence
-  completedAt: string | null         // ISO timestamp; null = not done
+  completedAt: string | null,        // ISO timestamp; null = not done
+  missedAt: string | null            // ISO timestamp of a "Not done" tap; exclusive with completedAt (a completion wins)
 }
 
 Checklist = {              // standalone and reusable; unrelated to tasks and dates
@@ -185,13 +194,33 @@ JournalEntry = {           // at most one per local day
   createdAt: string,
   updatedAt: string
 }
+
+Character = {              // levels up from the tasks attached to it; XP is never stored
+  id: string,
+  avatar: AvatarKey,       // kid | woman | man | cat | dog | bird (statuses.js)
+  name: string,            // required, trimmed, max 80 chars
+  leveling: { base: number, step: number }, // level 2 needs `base` XP (1..99999); each later level `step` more (0..99999)
+  mood: { period: "day" | "week" | "month" | "year", happyMax: number, sadMin: number }, // sadMin > happyMax
+  habits: Habit[],
+  createdAt: string,
+  updatedAt: string
+}
+
+Habit = {                  // an existing regular task attached to a character
+  id: string,
+  taskId: string,          // at most one habit per task per character
+  since: "YYYY-MM-DD",     // results before this day don't count; defaults to the day it was attached
+  done:   { xp: number, status: StatusKey | null },  // xp 0..9999 gained when completed
+  missed: { xp: number, status: StatusKey | null }   // xp 0..9999 lost when missed
+}
 ```
 
 - `load()` runs `migrate(raw)`. Every future schema change increments `schemaVersion` and adds a migration step. Never break old export files.
 - If a checklist item is deleted from a task, ignore its orphaned keys in `progress`.
-- When a task is deleted, delete its `progress` entry too.
+- When a task is deleted, delete its `progress` entry and every habit that uses it.
 - A journal entry with no text, no emotions and `energy === null` is removed, not stored empty.
-- Schema history: 1 → 2 added `checklists` (migration sets it to `[]`). 2 → 3 added `journal` (migration sets it to `{}`).
+- Habits whose task doesn't exist are dropped on load. Defaults: leveling 100 / 50, mood week / 0 / 3, habit +10 / −5 with no statuses.
+- Schema history: 1 → 2 added `checklists` (migration sets it to `[]`). 2 → 3 added `journal` (migration sets it to `{}`). 3 → 4 added `characters` (migration sets it to `[]`).
 
 ---
 
@@ -212,10 +241,11 @@ JournalEntry = {           // at most one per local day
 These rules apply to tasks where `active === true`. A task appears **at most once** on Home.
 
 1. **Done** — the task has an occurrence whose `completedAt` falls on `today` in local time. This includes a pending occurrence completed today.
-2. **TO DO** — otherwise, if `isDue(task, today)`, the occurrence date is `today`.
-3. **Pending** — otherwise, find the most recent due date before `today` that is not completed. Look back no further than the later of `startDate` and the last completed occurrence, and at most 366 days. If one exists, the task is pending for that occurrence date. The card shows "since <date>".
-4. If the task is due today **and** has a missed earlier occurrence, show it in TO DO only. Missed occurrences of recurring tasks are skipped, not stacked.
-5. Once tasks that were never done stay in Pending until completed or deleted.
+2. **TO DO** — otherwise, if `isDue(task, today)`, the occurrence date is `today`, unless today's occurrence has `missedAt`, which puts it in **Not done** instead.
+3. **Not done** — otherwise, the task has an occurrence whose `missedAt` falls on `today` (a pending occurrence the user dismissed). The card acts on that occurrence date.
+4. **Pending** — otherwise, find the most recent due date before `today` that is not resolved (completed or marked Not done). Look back no further than the later of `startDate` and the last resolved occurrence, and at most 366 days. If one exists, the task is pending for that occurrence date. The card shows "since <date>".
+5. If the task is due today **and** has a missed earlier occurrence, show it in TO DO only. Missed occurrences of recurring tasks are skipped, not stacked.
+6. Once tasks that were never done stay in Pending until completed, marked Not done, or deleted.
 
 Sort each section by name. Section counts appear in the section headers.
 
@@ -228,7 +258,26 @@ Use `node --test tests/`. The tests must cover:
 - tasks whose start date is in the future;
 - the pending lookback, including a once task left overdue;
 - a pending task completed today, which must land in Done;
+- Not done on today's occurrence and on a pending one (including a once task), and the next day after each;
 - inactive tasks, which must never appear.
+
+---
+
+## 6b. Habit rules (`habits.js` — pure, tested)
+
+Nothing about XP is stored. `characterSummary(state, character, today)` recalculates it from `progress` on every render, so edits, Undo, late completions and imports stay consistent on their own.
+
+- **Outcomes** of a habit (`habitOutcomes`), counted from `since`:
+  - **done:** every completed occurrence on or after `since`, due or not, so a recurrence edit never takes back earned XP;
+  - **missed:** every occurrence marked **Not done** (`missedAt`) on or after `since`, today included, so the XP and status change the moment the button is tapped; plus every due date (`dueDatesBetween` in `schedule.js`) from the later of `since` and the task's `startDate` up to **yesterday** that was neither completed nor marked. An unmarked today is never missed: the day isn't over. An overdue once task is one miss.
+  - **Inactive tasks** never miss on their own (they are hidden from Home); their completions and Not done marks still count.
+  - Completing an old pending occurrence turns its miss into a done; Undo turns it back.
+- **XP:** add each day's deltas (+`done.xp`, −`missed.xp`) in date order, keeping the running total at **0 or above**, so early misses build no debt. Levels can go down.
+- **Levels:** additive curve. `xpForLevel(L) = base + (L − 1) · step` is the XP from level L to L + 1. `levelForXp` solves it in closed form, so huge totals never loop.
+- **Mood:** count misses in the rolling window of the N days before today (`day` 1, `week` 7, `month` 30, `year` 365), plus today's Not done marks. Happy if ≤ `happyMax`, Sad if ≥ `sadMin`, otherwise Normal. The moods use the `happy` / `normal` / `sad` statuses.
+- **Statuses:** for each habit on an active task, the status set by its latest outcome (done or missed). Skip nulls and duplicates, and leave out the mood's own key.
+
+Tests in `tests/habits.test.js` cover the level curve, outcomes (today, `since`, late completion, Not done, inactive, no-longer-due completions, once, weekly with interval), the XP floor, every mood window boundary, status rules, and the avatar/status data.
 
 ---
 
@@ -236,13 +285,14 @@ Use `node --test tests/`. The tests must cover:
 
 ### Home (`#/home`)
 - **Header:** the title "Today" plus the formatted local date. On the right, a **"+ Quick task"** button.
-- **Sections:** TO DO, Pending, Done and Journal, in that order. Each section can be collapsed. An empty task section shows a short muted line.
+- **Sections:** Characters, TO DO, Pending, Done, Not done and Journal, in that order. Each section can be collapsed. An empty task section shows a short muted line. Characters and Not done are left out when empty.
+- **Characters section:** one card per character (shared `characterCard()` from `screens/habits.js`), sorted by name: avatar with a mood-colored ring and mood badge, name, "Lv N", the status emoji, and an XP bar with "into/needed XP". The card opens `#/habits/:id`. It re-renders with the task sections, so Complete and Undo move the bar at once.
 - **Journal section:** today's entry, edited in place with the shared `journalEditor()` (see Journal below), plus an "All entries" link to `#/journal`. The task sections re-render on every store change; the journal section is built once per day and only updated in place, so a save never steals focus or the caret while the user types.
 - **Task card:**
   - It shows the icon, the name, and a checklist progress count such as "2/5".
   - Tapping the card expands it to show the notes and the checklist. Checkbox state is saved in that occurrence's `progress` entry.
-  - **Regular task:** a **Complete** button sets `completedAt`. In Done, the button becomes **Undo**, which clears `completedAt`.
-  - **Quick task:** a **Delete** button replaces Complete. It asks for confirmation, then removes the task and its progress entirely. Quick tasks have no Complete button.
+  - **Regular task:** in TO DO and Pending, an Edit icon button plus **Not done** and **Complete**, side by side. Complete sets `completedAt`; Not done sets `missedAt`, so habits count the miss at once and the card moves to the **Not done** section (red dot, red icon; "due <date>" when it was a pending occurrence). Both show a toast with Undo. In Done and Not done, the button becomes **Undo**, which clears both timestamps.
+  - **Quick task:** a **Delete** button replaces Complete. It asks for confirmation, then removes the task and its progress entirely. Quick tasks have no Complete or Not done button.
 - **Quick task sheet:**
   - A bottom sheet with Name (required), a Notes list (add/remove rows) and a Checklist (add/remove rows).
   - On save, it creates `kind: "quick"`, `active: true`, `icon: "task"`, and `recurrence: { type: "once", interval: 1, startDate: today, … }`.
@@ -289,6 +339,14 @@ One entry per local day: up to **3 emotions**, one **energy level** and free tex
   - Future or invalid months show the current month. Next is disabled on the current month.
 - **Day (`#/journal/YYYY-MM-DD`):** Back to the month, ‹ › for previous/next day (replace navigation; next disabled on today), the editor, and **Delete entry** with confirmation when the entry exists. Past days are editable; future days show "This day hasn't happened yet"; impossible dates show "This date doesn't exist".
 
+### Habits (`#/habits`, `#/habits/:id`, forms)
+Characters that gain XP when their tasks are completed and lose it when they are missed. Users never create or edit tasks here; they only attach existing **regular** tasks.
+- **List (`#/habits`):** character cards sorted by name, an empty state, and a **floating "+"** that opens `#/habits/new`.
+- **Character (`#/habits/:id`):** Back and **Edit** in the header. A hero with the large avatar, level, total XP, XP bar and "N to level L+1"; a mood line ("Sad · 7 missed in the last 7 days"); status chips (emoji + label). Then the **Habits** list: task icon and name, "+10 XP 💪 · −5 XP 🥀", and the last result ("Done yesterday", "Missed Oct 7", "New", or "Paused" for an inactive task). A row opens the habit form; the **"+"** attaches another task and hides when none is left, with a hint (and a New task link when there are no tasks at all).
+- **Character form (`#/habits/new`, `#/habits/:id/edit`):** avatar (6 emoji options), Name (required); **Leveling**: "XP to reach level 2" and "Extra XP for each level after" steppers with a live preview of levels 2–5, 10 and 20; **Mood**: Day / Week / Month / Year segmented control, "Happy when missed at most" and "Sad when missed at least" steppers (Sad must be greater), and a Happy / Normal / Sad scale preview. Edit mode has Delete with confirmation; tasks are not affected.
+- **Habit form (`#/habits/:id/tasks/new`, `#/habits/:id/tasks/:habitId`):** a task picker sheet (regular tasks not yet attached to this character, with recurrence summary; inactive ones say so); **Counts from** date, defaulting to today; **When completed** and **When missed**, each an XP stepper and a status picker sheet (64 statuses in 8 groups, plus "No status"). Edit mode has **Detach task** with confirmation.
+- All forms edit a draft, save on Save, and use the unsaved-changes guard. Deleting a task warns when characters use it.
+
 ### Settings (`#/settings`)
 - **Export:**
   - Build the export JSON (section 10). The filename is `tasks-backup-YYYY-MM-DD.json`.
@@ -297,7 +355,7 @@ One entry per local day: up to **3 emotions**, one **energy level** and free tex
   - Provide two buttons: **Share backup…** (shown only when supported) and **Download backup**.
 - **Import:**
   - Use `<input type="file" accept=".json,application/json">`. Parse the file and validate it (section 10).
-  - Show a summary: "X tasks, Z checklists, Y progress records, J journal entries, exported on <date>".
+  - Show a summary: "X tasks, Z checklists, C characters, Y progress records, J journal entries, exported on <date>".
   - Confirm with "This will replace all current data", then replace the state and re-render.
   - Invalid files show a clear error and change nothing.
 - **Storage note:** state that data lives only on this device and that removing the app deletes it. Show the last export date, saved in localStorage under `taskmanager.lastExport`.
@@ -335,6 +393,12 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 - **Emotions** are emoji drawn by the phone's own emoji font, so nothing is downloaded. Use only emoji from Unicode 11 or older, with no ZWJ sequences or variation selectors, so older phones never show empty boxes. `EMOTIONS` is `{ key: { label, emoji } }` in picker order (positive, neutral, negative): happy, grateful, calm, excited, loved, proud, motivated, confident, relaxed, hopeful, inspired, focused · neutral, surprised, confused, thoughtful, bored · sad, tired, anxious, burnout, stressed, angry, frustrated, lonely, overwhelmed, scared, sick, disappointed, guilty, insecure, hurt.
 - **Energy** levels are `ENERGY_LEVELS = [0, 14, 29, 43, 57, 71, 86, 100]` (even 1/7 steps). `renderEnergy(level)` draws a battery SVG with one bar per step; `energyTone(level)` picks its color.
 
+### Character avatars and statuses (`statuses.js`)
+- Emoji too, under the same rules as the journal emotions, and each one is a **single code point** with default emoji presentation (tests check for no U+200D / U+FE0F).
+- `AVATARS`: kid 🧒, woman 👩, man 👨, cat 🐱, dog 🐶, bird 🐦. Unknown keys fall back to `kid`.
+- `STATUSES` is `{ key: { label, emoji, group } }`: 64 entries, 8 per group, in picker order: **Mood** (happy, normal, sad, calm, excited, angry, bored, playful) · **Mind** (stressed, overwhelmed, anxious, confused, lonely, loved, grumpy, heartbroken) · **Body** (strong, weak, fit, lazy, sick, injured, sore, queasy) · **Energy & sleep** (sleepy, tired, exhausted, rested, asleep, energetic, charged, caffeinated) · **Food & care** (hungry, fed, thirsty, hydrated, junkFood, eatingWell, healthy, clean) · **Work & study** (busy, free, productive, procrastinating, focused, studying, smart, creative) · **Money** (rich, poor, saving, inDebt, investing, generous, billsPaid, budgeting) · **Life** (motivated, confident, proud, inspired, grateful, relaxed, social, lucky).
+- Labels must fit the 4-column picker at 360 px (≤ 11 characters per word; "procrastinating" shows as "Putting off"). Unknown status keys become `null`.
+
 ---
 
 ## 9. UI / styling (`app.css`)
@@ -354,6 +418,7 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 | `--warning` | `#f0b44c` (Pending) |
 | `--danger` | `#ef5f5f` |
 | `--journal` | `#b99cff` (Journal dots) |
+| `--xp` | `#6fd3e0` (XP bars, level badges, Characters dot) |
 
 **Layout and fit:**
 - Use the system font stack: `-apple-system, system-ui, Roboto, sans-serif`.
@@ -377,12 +442,13 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 ```json
 {
   "app": "task-manager-pwa",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "exportedAt": "2026-10-08T11:00:00.000Z",
   "tasks": [ /* Task */ ],
   "progress": { /* taskId -> date -> Occurrence */ },
   "checklists": [ /* Checklist */ ],
-  "journal": { /* date -> JournalEntry */ }
+  "journal": { /* date -> JournalEntry */ },
+  "characters": [ /* Character */ ]
 }
 ```
 
@@ -393,11 +459,15 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 - `checklists`, when present, must be an array, and every checklist must have an `id` and a `name`. Schema 1 files have no checklists.
 - `journal`, when present, must be an object keyed by valid dates. Schema 1 and 2 files have no journal.
 - Dates must match `/^\d{4}-\d{2}-\d{2}$/`.
+- An occurrence's `missedAt` must be a timestamp, else `null`; when `completedAt` is also set, `missedAt` becomes `null`. Files without `missedAt` get `null`.
 - Unknown icons map to `task`.
 - Drop `progress` entries for unknown task IDs.
 - In journal entries, drop unknown or duplicate emotions and keep at most 3; an `energy` that is not one of `ENERGY_LEVELS` becomes `null`; entries left empty are dropped.
+- `characters`, when present, must be an array, and every character must have an `id` and a `name`; ids are unique. Schema 1–3 files have no characters.
+- Unknown avatars map to `kid` and unknown statuses to `null`. Numbers are clamped to their ranges; a `sadMin` not above `happyMax` becomes `happyMax + 1`.
+- A habit's `since` must be a valid date. Drop habits for unknown tasks and a second habit for the same task.
 
-**Behavior:** import always **replaces** the whole state, after confirmation. Export always includes quick tasks, checklists and the journal too.
+**Behavior:** import always **replaces** the whole state, after confirmation. Export always includes quick tasks, checklists, the journal and characters too.
 
 ---
 
@@ -421,3 +491,8 @@ Export `ICONS` as `{ key: { label, svg } }` and a `renderIcon(key)` helper. Unkn
 - Completing a task does **not** require every checklist item to be ticked.
 - Checklists (the tab) are independent of tasks: CRUD only, no dates and no completion. Ticks persist until **Uncheck all**.
 - Journal: one entry per day with up to **3 emotions** (32 options, shown as **emoji**), one **energy level** (8 even steps, 0–100%) and free text. Today's entry is written on Home, below Done; the Journal tab shows a **calendar plus entries list**, one month at a time. Past days can be written or edited; future days cannot. Text autosaves.
+- Habits: characters (6 avatars) attach existing tasks; the Habits tab never creates or edits tasks. Avatars and the 64 statuses are **emoji**.
+- A character shows its **mood** (Happy / Normal / Sad, from misses in a rolling day / week / month / year window) **plus every current habit status**.
+- Levels use an **additive curve**: level 2 needs `base` XP and each later level needs `step` more than the one before.
+- XP is **recalculated from task history**, never stored: edits, Undo, late completions and imports stay consistent. The total never drops below 0, and levels can go down.
+- Home has a **Not done** button next to Complete on regular tasks. It records the miss at once (`missedAt`) and the card moves to its own **Not done** section, shown only when not empty. Without it, a due day that ends uncompleted still counts as missed.

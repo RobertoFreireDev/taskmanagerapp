@@ -22,6 +22,8 @@
   --danger-soft: rgba(239, 95, 95, 0.12);
   --danger-line: rgba(239, 95, 95, 0.4);
   --journal: #b99cff;
+  --xp: #6fd3e0;
+  --xp-soft: rgba(111, 211, 224, 0.14);
 
   --font: -apple-system, system-ui, Roboto, sans-serif;
   /* The phone's own emoji font: nothing is downloaded. */
@@ -121,7 +123,11 @@ h3 {
 .energy-option,
 .month-title,
 .month-option,
-.cal-cell {
+.cal-cell,
+.character-card,
+.avatar-choice,
+.picker-field,
+.pick-option {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -224,7 +230,8 @@ h3 {
 }
 
 .view[data-screen='tasks'],
-.view[data-screen='checklists'] {
+.view[data-screen='checklists'],
+.view[data-screen='habits'] {
   padding-bottom: 104px;
 }
 
@@ -236,19 +243,29 @@ h3 {
   border-top: 1px solid var(--border);
 }
 
+/* Six tabs share 360 px, so labels are a little smaller and never wrap. */
 .tab {
-  flex: 1;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
+  min-width: 0;
   min-height: var(--tabbar-h);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   text-decoration: none;
   touch-action: manipulation;
+}
+
+.tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tab[aria-current='page'] {
@@ -698,6 +715,44 @@ h3 {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* Edit is an icon so Not done and Complete fit side by side at 360 px. */
+.card-edit {
+  margin-right: auto;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+.card-actions.has-outcomes {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.card-actions.has-outcomes .btn {
+  gap: 6px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+/* Not done: tasks marked as missed today. */
+.is-missed .section-dot {
+  background: var(--danger);
+}
+
+.is-missed .card-icon {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.is-missed .card-name {
+  color: var(--muted);
+}
+
+.meta-missed {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 /* ----------------------------------------------------------------- Tasks */
@@ -1354,6 +1409,484 @@ a.cal-day:focus-visible {
   display: grid;
   gap: 24px;
   padding-top: 4px;
+}
+
+/* ---------------------------------------------------------------- Habits */
+
+.is-characters .section-dot {
+  background: var(--xp);
+}
+
+/* Long names truncate instead of widening the list past the screen. */
+.card-list > li {
+  min-width: 0;
+}
+
+.character-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 80px;
+  padding: 12px 14px 12px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.character-card:focus-visible {
+  outline-offset: -2px;
+}
+
+.character-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.character-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.character-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.level-badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: var(--xp-soft);
+  color: var(--xp);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 18px;
+}
+
+.xp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.xp-bar {
+  display: block;
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+}
+
+.xp-bar .progress-bar-fill {
+  display: block;
+  background: var(--xp);
+}
+
+.xp-text {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Avatar emoji in a ring colored by mood, with the mood emoji as a badge. */
+.avatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-size: 28px;
+}
+
+.avatar.mood-happy {
+  border-color: var(--success);
+}
+
+.avatar.mood-sad {
+  border-color: var(--danger);
+}
+
+.mood-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  box-shadow: 0 0 0 2px var(--surface);
+  font-size: 15px;
+}
+
+.avatar-lg {
+  width: 84px;
+  height: 84px;
+  border-width: 3px;
+  font-size: 46px;
+}
+
+.avatar-lg .mood-badge {
+  right: -4px;
+  bottom: -4px;
+  width: 32px;
+  height: 32px;
+  font-size: 20px;
+}
+
+.character-view {
+  display: grid;
+  gap: 22px;
+  padding-top: 4px;
+}
+
+.character-hero {
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.hero-top {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.hero-text {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hero-level {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.hero-total {
+  color: var(--xp);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-xp {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mood-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 15px;
+}
+
+.mood-line .emoji {
+  font-size: 22px;
+}
+
+.mood-line.mood-happy strong {
+  color: var(--success);
+}
+
+.mood-line.mood-sad strong {
+  color: var(--danger);
+}
+
+.status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 12px 2px 6px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status-chip .emoji {
+  font-size: 18px;
+}
+
+.habit-row .task-row-text {
+  flex: 1;
+}
+
+.habit-row .task-row-sub .emoji {
+  font-size: 14px;
+}
+
+.outcome {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.outcome-done {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.outcome-missed {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.habit-empty {
+  padding-left: 4px;
+}
+
+.habit-hint {
+  margin: 12px 4px 0;
+  font-size: 14px;
+}
+
+.habit-hint p {
+  margin: 0;
+}
+
+.habit-hint .btn {
+  margin-top: 12px;
+}
+
+/* Character form */
+
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.avatar-choice {
+  position: relative;
+  min-width: 0;
+}
+
+.avatar-choice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.avatar-choice label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 76px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.avatar-choice .emoji {
+  font-size: 30px;
+}
+
+.avatar-choice input:checked + label {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.avatar-choice input:focus-visible + label {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.segmented.segmented-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.section-hint {
+  margin: -6px 0 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.field-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.mood-scale {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mood-scale > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 15px;
+}
+
+.mood-scale-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.mood-scale-item .emoji {
+  font-size: 24px;
+}
+
+.mood-scale-item strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* Habit form: buttons that open a picker sheet. */
+
+.picker-field,
+.pick-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 8px 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.picker-field .task-row-text,
+.pick-option .task-row-text {
+  flex: 1;
+}
+
+.picker-field[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.chevron-end {
+  color: var(--muted);
+}
+
+.picker-emoji {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font-size: 24px;
+}
+
+.pick-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 8px;
+  list-style: none;
+}
+
+.pick-list > li {
+  min-width: 0;
+}
+
+.pick-option {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.pick-option[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.status-group + .status-group {
+  margin-top: 12px;
+}
+
+.status-group-title {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* ----------------------------------------------------------------- Forms */

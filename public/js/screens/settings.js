@@ -23,8 +23,8 @@ export function mount({ header, main, ctx }) {
 
   function renderLastExport() {
     const last = getLastExport();
-    const { tasks, checklists, journal } = getState();
-    const hasData = tasks.length > 0 || checklists.length > 0 || Object.keys(journal).length > 0;
+    const { tasks, checklists, journal, characters } = getState();
+    const hasData = tasks.length > 0 || checklists.length > 0 || Object.keys(journal).length > 0 || characters.length > 0;
     const ageDays = last ? (Date.now() - new Date(last).getTime()) / 86_400_000 : Infinity;
     lastExportLine.replaceChildren(last ? `Last export: ${formatTimestamp(last)}` : 'Never exported on this device.');
     lastExportLine.classList.toggle('is-warning', hasData && ageDays > STALE_EXPORT_DAYS);
@@ -53,7 +53,7 @@ export function mount({ header, main, ctx }) {
 
   const backupCard = card(
     'Backup',
-    h('p', {}, 'Save everything (tasks, quick tasks, progress, checklists and your journal) to a JSON file. Keep it somewhere safe, like Drive, email or another device.'),
+    h('p', {}, 'Save everything (tasks, quick tasks, progress, checklists, your journal and habit characters) to a JSON file. Keep it somewhere safe, like Drive, email or another device.'),
     lastExportLine,
     h('div', { class: 'button-stack' },
       canShareBackup() ? h('button', { type: 'button', class: 'btn btn-primary btn-block', onclick: onShare }, icon('share'), 'Share backup…') : null,
@@ -85,11 +85,11 @@ export function mount({ header, main, ctx }) {
       return showImportError('This file could not be read.');
     }
 
-    const { tasks, checklists, progressRecords, journalEntries, exportedAt } = result.summary;
+    const { tasks, checklists, characters, progressRecords, journalEntries, exportedAt } = result.summary;
     const ok = await confirmDialog({
       title: 'Replace all data?',
       message: [
-        `${plural(tasks, 'task')}, ${plural(checklists, 'checklist')}, ${plural(progressRecords, 'progress record')}, ${journalEntries} journal ${journalEntries === 1 ? 'entry' : 'entries'}, exported on ${exportedAt ? formatTimestamp(exportedAt) : 'an unknown date'}.`,
+        `${plural(tasks, 'task')}, ${plural(checklists, 'checklist')}, ${plural(characters, 'character')}, ${plural(progressRecords, 'progress record')}, ${journalEntries} journal ${journalEntries === 1 ? 'entry' : 'entries'}, exported on ${exportedAt ? formatTimestamp(exportedAt) : 'an unknown date'}.`,
         'This will replace all current data.',
       ],
       confirmLabel: 'Replace',
@@ -182,17 +182,17 @@ export function mount({ header, main, ctx }) {
   async function onDeleteAll() {
     const first = await confirmDialog({
       title: 'Delete all data?',
-      message: 'All tasks, quick tasks, progress, checklists and journal entries in this app will be deleted.',
+      message: 'All tasks, quick tasks, progress, checklists, journal entries and characters in this app will be deleted.',
       confirmLabel: 'Continue',
       danger: true,
     });
     if (!first) return;
-    const { tasks, checklists, journal } = getState();
+    const { tasks, checklists, journal, characters } = getState();
     const entries = Object.keys(journal).length;
     const second = await confirmDialog({
       title: 'Are you sure?',
       message: [
-        `This permanently deletes ${plural(tasks.length, 'task')}, ${plural(checklists.length, 'checklist')} and ${entries} journal ${entries === 1 ? 'entry' : 'entries'}, and cannot be undone.`,
+        `This permanently deletes ${plural(tasks.length, 'task')}, ${plural(checklists.length, 'checklist')}, ${plural(characters.length, 'character')} and ${entries} journal ${entries === 1 ? 'entry' : 'entries'}, and cannot be undone.`,
         'Export a backup first if you might need it.',
       ],
       confirmLabel: 'Delete everything',
